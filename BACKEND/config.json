@@ -1,0 +1,14 @@
+{
+    "CONN-PORT": "udp:172.22.160.1:14550",
+    "DRONE":
+    {
+        "id": 1,
+        "alt": 5,
+        "loc": [40.7121045, 30.0245699],
+        "name": "Feniks-kisa",
+        "area-meter": 5,
+        "distance-meter": 1,
+        "geri-don": true,
+        "acil-mode": "LAND"
+    }
+}

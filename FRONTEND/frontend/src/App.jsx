@@ -78,7 +78,7 @@ export default function App() {
         // Only log connection loss if we weren't already disconnected
         // to avoid spamming the log during polling
       }
-    }, 1000);
+    }, 1500);
     return () => clearInterval(interval);
   }, []);
 

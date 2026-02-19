@@ -45,6 +45,7 @@ telemetry_data: Dict[str, Any] = {
     "last_update": 0
 }
 stop_event = threading.Event()
+system_running = threading.Event()
 state_lock = threading.Lock()
         
 with open(CONFIG_FILE, "r") as f:
@@ -53,6 +54,7 @@ with open(CONFIG_FILE, "r") as f:
 conn_port = conf["CONN-PORT"]
 drone_id = conf["DRONE"]["id"]
 ALT = conf["DRONE"]["alt"]
+LOC = conf["DRONE"]["loc"]
 
 is_running = threading.Event()
 
@@ -74,7 +76,7 @@ def telemetry_update_loop(drone_id: int):
     global vehicle_instance, telemetry_data
     print(f"[Telemetry] Loop started for Drone ID: {drone_id}")
     
-    while not stop_event.is_set():
+    while not system_running.is_set():
         if vehicle_instance is None:
             time.sleep(1)
             continue
@@ -123,7 +125,7 @@ async def startup_event():
 
 @app.on_event("shutdown")
 def shutdown_event():
-    stop_event.set()
+    system_running.set()
     if vehicle_instance:
         vehicle_instance.vehicle.close()
     print("[System] Connection closed.")
@@ -178,22 +180,32 @@ def disarm_drone():
 @app.post("/command/start-mission", response_model=CommandResponse)
 def start_mission(background_tasks: BackgroundTasks):
     if not vehicle_instance: raise HTTPException(503, "Drone not connected")
-    
+
     def handle_mission():
         vehicle_instance.set_mode(mode="GUIDED")
         vehicle_instance.arm_disarm(arm=True)
         vehicle_instance.multiple_takeoff(ALT)
+
+        # TODO: burada stop_event eger kod failsafe ile kapatılırsa set olarak kalıyor. yani bidaha ucmuyor onun cozumunu dusun
 
         while not stop_event.is_set():
             if vehicle_instance.get_pos()[2] * 1.1 >= ALT:
                 break
             time.sleep(0.05)
         
+        vehicle_instance.go_to(loc=LOC, alt=ALT)
+        print("Drone hedefe gidiyor")
+
         start_time = time.time()
-        while time.time() - start_time < 5:
-            time.sleep(0.01)
+        while not stop_event.is_set():
+            if time.time() - start_time >= 0.5:
+                if vehicle_instance.on_location(loc=LOC, seq=0):
+                    break
+            time.sleep(0.05)
         
+        print("Drone konuma ulasti iniyor")
         vehicle_instance.set_mode(mode="LAND")
+
         
     background_tasks.add_task(handle_mission)
     return CommandResponse(status="success", message=f"Takeoff to {ALT}m initiated")
@@ -201,18 +213,49 @@ def start_mission(background_tasks: BackgroundTasks):
 @app.post("/command/failsafe-mission", response_model=CommandResponse)
 def failsafe_mission():
     if not vehicle_instance: raise HTTPException(503, "Drone not connected")
+
+    def failsafe_drone_id(vehicle, drone_id, home_pos=None):
+        if home_pos == None:
+            print(f"{drone_id}>> Failsafe alıyor")
+            vehicle.set_mode(mode="RTL", drone_id=drone_id)
+
+        # guıdedli rtl
+        else:
+            print(f"{drone_id}>> Failsafe alıyor")
+            vehicle.set_mode(mode="GUIDED", drone_id=drone_id)
+
+            alt = vehicle.get_pos(drone_id=drone_id)[2]
+            vehicle.go_to(loc=home_pos, alt=alt, drone_id=drone_id)
+
+            start_time = time.time()
+            while True:
+                if time.time() - start_time > 3:
+                    print(f"{drone_id}>> RTL Alıyor...")
+                    start_time = time.time()
+
+                if vehicle.on_location(loc=home_pos, seq=0, sapma=1, drone_id=drone_id):
+                    print(f"{drone_id}>> iniş gerçekleşiyor")
+                    vehicle.set_mode(mode="LAND", drone_id=drone_id)
+                    break
+
+    thraeds = []
+    for d_id in vehicle_instance.drone_ids:
+        args = (vehicle_instance, d_id)
+
+        thrd = threading.Thread(target=failsafe_drone_id, args=args)
+        thrd.start()
+        thraeds.append(thrd)
+
+
+    for t in thraeds:
+        t.join()
+
+    print(f"{vehicle_instance.drone_ids} id'li Drone(lar) Failsafe aldi")
     
     if not stop_event.is_set():
         stop_event.set()
 
-    vehicle_instance.set_mode(mode="RTL")
     return CommandResponse(status="success", message="Landing initiated")
-
-@app.post("/command/goto", response_model=CommandResponse)
-def goto(req: GotoRequest):
-    if not vehicle_instance: raise HTTPException(503, "Drone not connected")
-    vehicle_instance.go_to(loc=(req.lat, req.lon), alt=req.alt)
-    return CommandResponse(status="success", message=f"Navigation to ({req.lat}, {req.lon}) sent")
 
 if __name__ == "__main__":
     import uvicorn

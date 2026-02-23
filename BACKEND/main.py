@@ -42,7 +42,8 @@ telemetry_data: Dict[str, Any] = {
     "mode": "UNKNOWN",
     "armed": False,
     "heading": 0.0,
-    "last_update": 0
+    "last_update": 0,
+    "logs": []
 }
 stop_event = threading.Event()
 system_running = threading.Event()
@@ -141,6 +142,9 @@ def get_telemetry():
     import random
     
     with state_lock:
+        current_logs = list(telemetry_data["logs"])
+        telemetry_data["logs"] = [] # Clear logs after sending
+
         if telemetry_data["connected"]:
             return {
                 "connected": True,
@@ -150,7 +154,8 @@ def get_telemetry():
                 "mode": telemetry_data["mode"],
                 "armed": telemetry_data["armed"],
                 "heading": telemetry_data["heading"],
-                "last_update": telemetry_data["last_update"]
+                "last_update": telemetry_data["last_update"],
+                "logs": current_logs
             }
         else:
             return {
@@ -162,7 +167,8 @@ def get_telemetry():
                 "armed": False,
                 "heading": 0.0,
                 "last_update": time.time(),
-                "test_jitter": True
+                "test_jitter": True,
+                "logs": current_logs
             }
 
 @app.post("/command/arm", response_model=CommandResponse)
@@ -182,8 +188,10 @@ def start_mission(background_tasks: BackgroundTasks):
     if not vehicle_instance: raise HTTPException(503, "Drone not connected")
 
     def handle_mission():
+        with state_lock: telemetry_data["logs"].append({"msg": "Mission starting: GUIDED mode", "type": "info"})
         vehicle_instance.set_mode(mode="GUIDED")
         vehicle_instance.arm_disarm(arm=True)
+        with state_lock: telemetry_data["logs"].append({"msg": f"Taking off to {ALT}m", "type": "warning"})
         vehicle_instance.multiple_takeoff(ALT)
 
         # TODO: burada stop_event eger kod failsafe ile kapatılırsa set olarak kalıyor. yani bidaha ucmuyor onun cozumunu dusun
@@ -193,6 +201,7 @@ def start_mission(background_tasks: BackgroundTasks):
                 break
             time.sleep(0.05)
         
+        with state_lock: telemetry_data["logs"].append({"msg": "Target reached, moving to destination", "type": "success"})
         vehicle_instance.go_to(loc=LOC, alt=ALT)
         print("Drone hedefe gidiyor")
 
@@ -203,6 +212,7 @@ def start_mission(background_tasks: BackgroundTasks):
                     break
             time.sleep(0.05)
         
+        with state_lock: telemetry_data["logs"].append({"msg": "Arrived at destination, landing", "type": "success"})
         print("Drone konuma ulasti iniyor")
         vehicle_instance.set_mode(mode="LAND")
 

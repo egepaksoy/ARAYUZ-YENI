@@ -145,7 +145,7 @@ export default function App() {
       
       {/* Backend Connection Overlay */}
       {!telemetry.connected && (
-        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center">
+        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center">
           <div className="text-center p-8 border border-cyan-500/30 rounded-2xl bg-black/50 shadow-[0_0_50px_rgba(6,182,212,0.2)]">
             <div className="w-16 h-16 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin mx-auto mb-6"></div>
             <h2 className="text-2xl font-black tracking-tighter uppercase italic text-cyan-500 mb-2">
@@ -208,23 +208,66 @@ export default function App() {
           </Card>
         </div>
 
-        {/* Center: Video Stream */}
+        {/* Center: Video & Map */}
         <div className="col-span-6 flex flex-col gap-4">
-          <div className="flex-grow bg-black border border-cyan-500/30 rounded-xl relative group overflow-hidden shadow-2xl">
-            {/* Scanline effect overlay */}
-            <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.02),rgba(0,255,0,0.01),rgba(0,0,255,0.02))] z-10 bg-[length:100%_2px,3px_100%]" />
-            
-            <div className="absolute inset-0 flex items-center justify-center bg-zinc-900/50">
-              <div className="text-center">
-                <Video className="w-12 h-12 text-cyan-500/20 mx-auto mb-2 animate-pulse" />
-                <p className="text-cyan-500/40 font-mono text-sm tracking-widest uppercase">Awaiting Video Feed...</p>
+          <div className="flex-grow grid grid-rows-2 gap-4 h-full">
+            {/* Video Stream */}
+            <div className="bg-black border border-cyan-500/30 rounded-xl relative group overflow-hidden shadow-2xl">
+              {/* Scanline effect overlay */}
+              <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.02),rgba(0,255,0,0.01),rgba(0,0,255,0.02))] z-10 bg-[length:100%_2px,3px_100%]" />
+              
+              <div className="absolute inset-0 flex items-center justify-center bg-zinc-900/50">
+                <div className="text-center">
+                  <Video className="w-12 h-12 text-cyan-500/20 mx-auto mb-2 animate-pulse" />
+                  <p className="text-cyan-500/40 font-mono text-sm tracking-widest uppercase">Awaiting Video Feed...</p>
+                </div>
+              </div>
+              
+              {/* UI Overlay on Video */}
+              <div className="absolute top-4 right-4 flex gap-2 z-20">
+                <span className="bg-red-600 text-[10px] font-bold px-2 py-0.5 rounded animate-pulse">REC</span>
+                <span className="bg-black/60 text-[10px] font-bold px-2 py-0.5 rounded border border-white/10">00:12:44</span>
               </div>
             </div>
-            
-            {/* UI Overlay on Video */}
-            <div className="absolute top-4 right-4 flex gap-2">
-              <span className="bg-red-600 text-[10px] font-bold px-2 py-0.5 rounded animate-pulse">REC</span>
-              <span className="bg-black/60 text-[10px] font-bold px-2 py-0.5 rounded border border-white/10">00:12:44</span>
+
+            {/* Map */}
+            <div className="bg-black border border-cyan-500/30 rounded-xl relative overflow-hidden shadow-2xl">
+              <MapContainer 
+                center={[telemetry.lat || 0, telemetry.lon || 0]} 
+                zoom={15} 
+                style={{ height: '100%', width: '100%' }}
+                zoomControl={false}
+              >
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                <ChangeView center={[telemetry.lat || 0, telemetry.lon || 0]} />
+                {telemetry.lat !== 0 && (
+                  <Marker 
+                    position={[telemetry.lat, telemetry.lon]} 
+                    icon={new L.DivIcon({
+                      html: `<div style="transform: rotate(${telemetry.heading || 0}deg); transition: transform 0.5s ease-in-out;">
+                              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 8px rgba(6,182,212,0.8))">
+                                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+                                <path d="m12 8 4 4-4 4-4-4z"/>
+                                <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
+                              </svg>
+                            </div>`,
+                      className: 'custom-drone-icon',
+                      iconSize: [40, 40],
+                      iconAnchor: [20, 20]
+                    })}
+                  />
+                )}
+              </MapContainer>
+              
+              {/* Map Overlay Labels */}
+              <div className="absolute top-2 left-2 z-[1000] flex gap-2">
+                <span className="bg-black/80 backdrop-blur-md border border-cyan-500/30 text-[10px] font-bold px-2 py-1 rounded text-cyan-400 flex items-center gap-1">
+                  <MapIcon className="w-3 h-3" /> LIVE TRACKING
+                </span>
+              </div>
             </div>
           </div>
 

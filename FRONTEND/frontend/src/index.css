@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+/* Leaflet map fix for dark theme */
+.leaflet-container {
+  background: #05070a !important;
+}
+
+.leaflet-tile {
+  filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+}
+
+.custom-drone-icon {
+  background: transparent;
+  border: none;
+}
+
 :root {
   background-color: #05070a;
 }

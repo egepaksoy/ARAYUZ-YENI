@@ -9,8 +9,41 @@ import {
   ArrowDown, 
   Power,
   Terminal as LogIcon,
-  Video
+  Video,
+  Map as MapIcon
 } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+// Fix for default marker icons in Leaflet
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
+let DefaultIcon = L.icon({
+    iconUrl: markerIcon,
+    shadowUrl: markerShadow,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41]
+});
+L.Marker.prototype.options.icon = DefaultIcon;
+
+// Custom Drone Icon
+const droneIcon = new L.DivIcon({
+  html: `<div style="transform: rotate(0deg);"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m12 8 4 4-4 4-4-4z"/><path d="M12 2v4"/><path d="M12 18v4"/><path d="M2 12h4"/><path d="M18 12h4"/></svg></div>`,
+  className: 'custom-drone-icon',
+  iconSize: [32, 32],
+  iconAnchor: [16, 16]
+});
+
+// Component to auto-center map
+function ChangeView({ center }) {
+  const map = useMap();
+  if (center[0] !== 0 && center[1] !== 0) {
+    map.setView(center, map.getZoom());
+  }
+  return null;
+}
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -56,7 +89,9 @@ export default function App() {
     heading: 0,
     battery: 100,
     armed: false,
-    status: "STANDBY"
+    status: "STANDBY",
+    mode: "UNKNOWN",
+    connected: false
   });
   
   const [logs, setLogs] = useState([]);
@@ -74,9 +109,15 @@ export default function App() {
         const response = await fetch('http://localhost:8000/telemetry');
         const data = await response.json();
         setTelemetry(data);
+        
+        // Handle backend logs if present
+        if (data.logs && data.logs.length > 0) {
+          data.logs.forEach(log => {
+            addLog(log.msg, log.type);
+          });
+        }
       } catch (err) {
-        // Only log connection loss if we weren't already disconnected
-        // to avoid spamming the log during polling
+        setTelemetry(prev => ({ ...prev, connected: false }));
       }
     }, 1500);
     return () => clearInterval(interval);
@@ -102,6 +143,21 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#05070a] bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-900/10 via-black to-black text-white p-6 font-sans selection:bg-cyan-500/30">
       
+      {/* Backend Connection Overlay */}
+      {!telemetry.connected && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center">
+          <div className="text-center p-8 border border-cyan-500/30 rounded-2xl bg-black/50 shadow-[0_0_50px_rgba(6,182,212,0.2)]">
+            <div className="w-16 h-16 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin mx-auto mb-6"></div>
+            <h2 className="text-2xl font-black tracking-tighter uppercase italic text-cyan-500 mb-2">
+              Bağlantı Bekleniyor
+            </h2>
+            <p className="text-gray-400 font-mono text-sm uppercase tracking-widest">
+              Backend sunucusu ile iletişim kuruluyor...
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* HUD Header */}
       <header className="flex justify-between items-center mb-6 border-b border-cyan-500/20 pb-4">
         <div className="flex items-center gap-4">
@@ -119,6 +175,10 @@ export default function App() {
         </div>
         
         <div className="flex gap-2">
+          <div className="px-4 py-2 rounded border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 font-mono text-sm flex items-center gap-2">
+            <Activity className="w-4 h-4" />
+            MODE: {telemetry.mode || "N/A"}
+          </div>
           <div className={cn("px-4 py-2 rounded border font-mono text-sm flex items-center gap-2", 
             telemetry.armed ? "bg-red-500/10 border-red-500 text-red-500" : "bg-cyan-500/10 border-cyan-500 text-cyan-500")}>
             <Activity className={cn("w-4 h-4", telemetry.armed && "animate-pulse")} />
@@ -221,17 +281,8 @@ export default function App() {
               </button>
             </div>
           </Card>
-          
-          <div className="mt-auto border border-cyan-500/10 p-4 rounded-xl bg-cyan-500/5">
-            <h4 className="text-[10px] text-cyan-400/40 uppercase tracking-tighter mb-2">System Health</h4>
-            <div className="flex gap-1">
-              {[1,2,3,4,5,6,7,8].map(i => (
-                <div key={i} className="h-4 flex-grow bg-cyan-500/20 rounded-sm" />
-              ))}
-            </div>
-          </div>
+        
         </div>
-
       </div>
     </div>
   );

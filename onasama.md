@@ -1,6 +1,6 @@
 ## Ege
 
-- [ ] backend'den frontend'e durum bilgisi gönderme fonksiyonu oluştur ki arayüzdeki kayan komut satırına yazsın
+- [x] backend'den frontend'e durum bilgisi gönderme fonksiyonu oluştur ki arayüzdeki kayan komut satırına yazsın
 
 - [ ] kamerayı test et
 
@@ -10,7 +10,7 @@
 
 - [ ] harita
 
-
+- [ ] Arayüzde kasma oluyo herşeyi beklemeden akış içinde yap (pymavlink v2)
 
 ## Ahmet:
 

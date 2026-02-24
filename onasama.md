@@ -4,11 +4,13 @@
 
 - [ ] kamerayı test et
 
-- [ ] backend bağlantısı koparsa arayüzde bilgi verilsin
+- [x] backend bağlantısı koparsa arayüzde bilgi verilsin
 
 - [ ] arayüzden mod değişikliği yapılabilsin
 
-- [ ] harita
+- [x] harita
+
+- [ ] Harita konumu duzenle
 
 - [ ] Arayüzde kasma oluyo herşeyi beklemeden akış içinde yap (pymavlink v2)
 
@@ -21,3 +23,9 @@
 - [ ] Drone datasında iki drone bilgilerini yaz
 
 - [ ] Arayüzde yazan bilgilerin Türkçe olması
+
+
+Drone kamera geçiş tuşunda drone idsi ve dronun anlık durumu yazsın:
+1 (Hedefleri arıyor) | 2 (Standby modunda)
+
+Drone kamera geçiş tusuna basıldığında kamera ekranı, mod değiştirme tuşu ve drone datası seçili dron'a göre olsun

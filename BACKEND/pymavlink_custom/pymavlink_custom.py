@@ -751,7 +751,7 @@ class Vehicle():
 
     # Konumda oldugunu kontrol etme
     # pos, seq, sapma (mt), drone_id
-    def on_location(self, loc, seq: int=0, sapma: int=1, drone_id: int=None):
+    def on_location(self, loc, seq: int=0, sapma: int=1, drone_loc: list=None, drone_id: int=None):
         if drone_id is None:
             drone_id = self.drone_id
         
@@ -759,7 +759,11 @@ class Vehicle():
             if drone_id not in self.drone_ids:
                 Exception(f"Drone bağlantısı yok: {drone_id}")
             
-            drone_pos = self.get_pos(drone_id=drone_id)
+            if drone_loc:
+                drone_pos = drone_loc
+            else:
+                drone_pos = self.get_pos(drone_id=drone_id)
+
             if seq != 0:
                 if geodesic(drone_pos[:2], loc[:2]).meters <= sapma and self.get_miss_wp(drone_id=drone_id) == seq:
                     return True

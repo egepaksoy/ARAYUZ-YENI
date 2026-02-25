@@ -10,11 +10,19 @@ import {
   Power,
   Terminal as LogIcon,
   Video,
-  Map as MapIcon
+  Eye,
+  Crosshair,
+  Map as MapIcon,
+  Target
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+import logo from './assets/logo_new.png';
+import feniks_blue from './assets/feniks_blue.png';
+import feniks_red from './assets/feniks_red.png';
 
 // Fix for default marker icons in Leaflet
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
@@ -28,314 +36,225 @@ let DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-// Custom Drone Icon
-const droneIcon = new L.DivIcon({
-  html: `<div style="transform: rotate(0deg);"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m12 8 4 4-4 4-4-4z"/><path d="M12 2v4"/><path d="M12 18v4"/><path d="M2 12h4"/><path d="M18 12h4"/></svg></div>`,
-  className: 'custom-drone-icon',
-  iconSize: [32, 32],
-  iconAnchor: [16, 16]
-});
-
-// Component to auto-center map
-function ChangeView({ center }) {
-  const map = useMap();
-  if (center[0] !== 0 && center[1] !== 0) {
-    map.setView(center, map.getZoom());
-  }
-  return null;
-}
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-// Helper for Tailwind class merging
 function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
 
-// Global WebSocket singleton to prevent double connections in StrictMode
 let globalWs = null;
 
 // --- Sub-Components ---
 
-const Card = ({ title, icon: Icon, children, className, extra }) => (
-  <div className={cn("relative group bg-black/40 backdrop-blur-md border border-cyan-500/20 rounded-xl p-4 overflow-hidden", className)}>
-    <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500/40 group-hover:bg-cyan-400 transition-colors" />
-    <div className="flex items-center justify-between mb-4 border-b border-cyan-500/10 pb-2">
-      <div className="flex items-center gap-2">
-        <Icon className="w-4 h-4 text-cyan-400" />
-        <h3 className="text-xs font-bold uppercase tracking-widest text-cyan-100/70">{title}</h3>
-      </div>
-      {extra}
+const Card = ({ title, icon: Icon, children, className }) => (
+  <div className={cn("relative group bg-black/60 backdrop-blur-md border rounded-xl p-4 overflow-hidden transition-all duration-500", className)}>
+    <div className="flex items-center gap-2 mb-4 border-b border-white/5 pb-2">
+      <Icon className="w-4 h-4 opacity-70" />
+      <h3 className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80">{title}</h3>
     </div>
     {children}
   </div>
 );
 
-const TelemetryItem = ({ label, value, unit, color = "cyan" }) => (
+const TelemetryItem = ({ label, value, unit, colorClass = "text-cyan-400" }) => (
   <div className="flex flex-col">
-    <span className="text-[10px] uppercase text-gray-500 font-semibold">{label}</span>
+    <span className="text-[9px] uppercase text-gray-500 font-bold tracking-tighter">{label}</span>
     <div className="flex items-baseline gap-1">
-      <span className={cn("text-2xl font-mono font-bold tracking-tighter", {
-        "text-cyan-400": color === "cyan",
-        "text-orange-400": color === "orange",
-        "text-emerald-400": color === "green",
-      })}>{value}</span>
-      <span className="text-[10px] text-gray-400">{unit}</span>
+      <span className={cn("text-xl font-mono font-black tracking-tighter", colorClass)}>{value}</span>
+      <span className="text-[9px] text-gray-400 font-bold">{unit}</span>
     </div>
   </div>
 );
 
+function ChangeView({ center, zoom }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center && center[0] !== 0 && center[1] !== 0) {
+      map.setView(center, zoom || map.getZoom());
+    }
+  }, [center, map]);
+  return null;
+}
+
 // --- Main Dashboard ---
 
 export default function App() {
-  const [telemetry, setTelemetry] = useState({
-    alt: 0.0,
-    lat: 0.0,
-    lon: 0.0,
-    heading: 0,
-    battery: 100,
-    armed: false,
-    status: "STANDBY",
-    mode: "UNKNOWN",
-    connected: false
-  });
-  
+  const [drones, setDrones] = useState([]);
   const [logs, setLogs] = useState([]);
+  const [isConnected, setIsConnected] = useState(false);
+  const [activeDroneIdx, setActiveDroneIdx] = useState(0); 
+  // Varsayılan konum (Kocaeli) - Drone verisi gelene kadar geçerli
+  const [userLocation] = useState([40.766, 29.917]); 
   const logEndRef = useRef(null);
 
-  // Auto-scroll logs
+  const isAttackMode = activeDroneIdx === 1;
+  const themeColorClass = isAttackMode ? "text-red-500" : "text-cyan-500";
+  const themeBorderClass = isAttackMode ? "border-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.05)]" : "border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.05)]";
+
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
 
-  // WebSocket Connection
   useEffect(() => {
     let reconnectTimeout;
-
     const connect = () => {
-      // Eğer zaten bir bağlantı varsa yeni bağlantı açma
-      if (globalWs && (globalWs.readyState === WebSocket.OPEN || globalWs.readyState === WebSocket.CONNECTING)) {
-        return;
-      }
-
-      console.log('[App] Initializing WebSocket...');
+      if (globalWs && (globalWs.readyState === WebSocket.OPEN || globalWs.readyState === WebSocket.CONNECTING)) return;
       globalWs = new WebSocket('ws://localhost:8000/ws/telemetry');
-
-      globalWs.onopen = () => {
-        console.log('[App] WebSocket Connected');
-        setTelemetry(prev => ({ ...prev, connected: true }));
-      };
-
+      globalWs.onopen = () => setIsConnected(true);
       globalWs.onmessage = (event) => {
         const message = JSON.parse(event.data);
         if (message.type === 'telemetry') {
-          setTelemetry(message.data);
-          
-          if (message.data.logs && message.data.logs.length > 0) {
+          if (message.data.drones) setDrones(message.data.drones);
+          if (message.data.logs) {
             message.data.logs.forEach(log => {
-              addLog(log.msg, log.type);
+              const time = new Date().toLocaleTimeString([], { hour12: false });
+              setLogs(prev => [...prev, { time, msg: log.msg, type: log.type }]);
             });
           }
         }
       };
-
       globalWs.onclose = () => {
-        console.log('[App] WebSocket Disconnected. Retrying...');
-        setTelemetry(prev => ({ ...prev, connected: false }));
+        setIsConnected(false);
         globalWs = null;
         reconnectTimeout = setTimeout(connect, 3000);
       };
-
-      globalWs.onerror = (err) => {
-        console.error('[App] WebSocket Error:', err);
-        if (globalWs) globalWs.close();
-      };
     };
-
     connect();
-
-    return () => {
-      // In production we would normally close it, but in development 
-      // StrictMode we keep it alive or let the singleton handle it.
-      clearTimeout(reconnectTimeout);
-    };
+    return () => clearTimeout(reconnectTimeout);
   }, []);
 
-  const addLog = (msg, type = "info") => {
+  const sendCommand = async (cmd, drone_id = null) => {
     const time = new Date().toLocaleTimeString([], { hour12: false });
-    setLogs(prev => [...prev, { time, msg, type }]);
-  };
-
-  const clearLogs = () => {
-    setLogs([]);
-  };
-
-  const sendCommand = async (cmd) => {
-    addLog(`Executing: ${cmd.toUpperCase()}...`, "warning");
+    const targetId = drone_id || (activeDroneIdx + 1);
+    const targetDesc = drone_id ? `Birim ${drone_id}` : "TÜM BİRİMLER";
+    setLogs(prev => [...prev, { time, msg: `${targetDesc}: ${cmd.toUpperCase()} komutu iletildi`, type: "warning" }]);
     try {
-      const response = await fetch(`http://localhost:8000/command/${cmd}`, { method: 'POST' });
-      if (!response.ok) {
-        addLog(`Error: ${cmd} failed on server`, "error");
-      }
+      const url = drone_id ? `http://localhost:8000/command/${cmd}?drone_id=${targetId}` : `http://localhost:8000/command/${cmd}`;
+      await fetch(url, { method: 'POST' });
     } catch (err) {
-      addLog(`Error: ${cmd} communication failure`, "error");
+      setLogs(prev => [...prev, { time, msg: "İletişim Hatası", type: "error" }]);
     }
   };
 
-  const changeMode = async (mode) => {
-    addLog(`Changing mode to: ${mode}...`, "warning");
-    try {
-      const response = await fetch('http://localhost:8000/command/mode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode })
-      });
-      if (!response.ok) {
-        addLog(`Error: Mode change to ${mode} failed`, "error");
-      }
-    } catch (err) {
-      addLog(`Error: Mode change communication failure`, "error");
-    }
-  };
+  const displayDrones = drones.length > 0 ? drones : [
+    { id: 1, alt: 0, lat: 0, lon: 0, heading: 0, battery: 100, armed: false, mode: "DISCONNECTED" },
+    { id: 2, alt: 0, lat: 0, lon: 0, heading: 0, battery: 100, armed: false, mode: "DISCONNECTED" }
+  ];
+
+  const activeDrone = displayDrones[activeDroneIdx] || displayDrones[0];
 
   return (
-    <div className="min-h-screen bg-[#05070a] bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-900/10 via-black to-black text-white p-6 font-sans selection:bg-cyan-500/30">
+    <div className={cn("min-h-screen bg-[#05070a] text-white p-6 font-sans transition-all duration-700", 
+      isAttackMode ? "bg-[radial-gradient(circle_at_center,_rgba(239,68,68,0.08)_0%,_black_100%)]" : "bg-[radial-gradient(circle_at_center,_rgba(6,182,212,0.08)_0%,_black_100%)]")}>
       
-      {/* Backend Connection Overlay */}
-      { !telemetry.connected && (
-        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center">
-          <div className="text-center p-8 border border-cyan-500/30 rounded-2xl bg-black/50 shadow-[0_0_50px_rgba(6,182,212,0.2)]">
-            <div className="w-16 h-16 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin mx-auto mb-6"></div>
-            <h2 className="text-2xl font-black tracking-tighter uppercase italic text-cyan-500 mb-2">
-              Bağlantı Bekleniyor
-            </h2>
-            <p className="text-gray-400 font-mono text-sm uppercase tracking-widest">
-              Backend sunucusu ile iletişim kuruluyor...
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* HUD Header */}
-      <header className="flex justify-between items-center mb-6 border-b border-cyan-500/20 pb-4">
-        <div className="flex items-center gap-4">
-          <div className="h-10 w-10 bg-cyan-500 rounded-lg flex items-center justify-center shadow-[0_0_20px_rgba(6,182,212,0.5)]">
-            <Navigation className="text-black" />
+      <header className={cn("flex justify-between items-center mb-6 border-b pb-4 transition-colors", isAttackMode ? "border-red-500/20" : "border-cyan-500/20")}>
+        <div className="flex items-center gap-5">
+          <div className="flex items-center gap-3 border-r border-white/10 pr-5">
+            <img src={isAttackMode ? feniks_red : feniks_blue} alt="Feniks" className="h-10 w-auto object-contain" />
           </div>
           <div>
-            <h1 className="text-xl font-black tracking-tighter uppercase italic">Aerokou <span className="text-cyan-500 font-light">GCS_v1.0</span></h1>
-            <div className="flex gap-4 text-[10px] text-cyan-400/60 uppercase font-bold tracking-widest">
-            </div>
+            <h1 className="text-2xl font-black tracking-tighter italic uppercase">AEROKOU <span className={themeColorClass}>{isAttackMode ? "SALDIRI EKRANI" : "GÖZLEMCİ EKRANI"}</span></h1>
+            <p className="text-[10px] font-bold opacity-40 tracking-[0.3em]">SİSTEM DURUMU: {isConnected ? "ÇEVRİMİÇİ" : "ÇEVRİMDIŞI"}</p>
           </div>
         </div>
         
-        <div className="flex gap-2">
-          <div className="px-4 py-2 rounded border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 font-mono text-sm flex items-center gap-2">
-            <Activity className="w-4 h-4" />
-            MODE: {telemetry.mode || "N/A"}
-          </div>
-          <div className={cn("px-4 py-2 rounded border font-mono text-sm flex items-center gap-2", 
-            telemetry.armed ? "bg-red-500/10 border-red-500 text-red-500" : "bg-cyan-500/10 border-cyan-500 text-cyan-500")}>
-            <Activity className={cn("w-4 h-4", telemetry.armed && "animate-pulse")} />
-            {telemetry.armed ? "ARMED / HOT" : "DISARMED / SAFE"}
-          </div>
+        <div className="flex bg-white/5 rounded-xl p-1 border border-white/5 backdrop-blur-md">
+          <button onClick={() => setActiveDroneIdx(0)} className={cn("px-6 py-2.5 rounded-lg font-black text-[10px] tracking-widest transition-all flex items-center gap-2", activeDroneIdx === 0 ? "bg-cyan-500 text-black shadow-[0_0_20px_rgba(6,182,212,0.4)]" : "text-cyan-500/40 hover:text-cyan-400")}>
+            <Eye className="w-3.5 h-3.5" /> GÖZLEMCİ DRONE
+          </button>
+          <button onClick={() => setActiveDroneIdx(1)} className={cn("px-6 py-2.5 rounded-lg font-black text-[10px] tracking-widest transition-all flex items-center gap-2", activeDroneIdx === 1 ? "bg-red-500 text-black shadow-[0_0_20px_rgba(239,68,68,0.4)]" : "text-red-500/40 hover:text-red-400")}>
+            <Crosshair className="w-3.5 h-3.5" /> SALDIRI DRONE'U
+          </button>
         </div>
       </header>
 
-      {/* Main Grid */}
       <div className="grid grid-cols-12 gap-6 h-[calc(100vh-160px)]">
         
-        {/* Left: Telemetry Stats */}
-        <div className="col-span-3 flex flex-col gap-4 overflow-y-auto pr-2 scrollbar-hide">
-          <Card title="Vertical Flight Data" icon={ArrowUp}>
-            <div className="grid gap-6">
-              <TelemetryItem label="Altitude" value={(telemetry.alt || 0).toFixed(1)} unit="m" color="cyan" />
-              <TelemetryItem label="Vertical Speed" value="0.0" unit="m/s" />
-              <TelemetryItem label="Heading" value={(telemetry.heading || 0).toFixed(2)} unit="" />
+        <div className="col-span-3 flex flex-col gap-4 overflow-hidden">
+          <Card title="Uçuş Parametreleri" icon={Activity} className={themeBorderClass}>
+            <div className="grid grid-cols-2 gap-y-6 gap-x-2">
+              <TelemetryItem label="İrtifa" value={activeDrone.alt.toFixed(1)} unit="m" colorClass={themeColorClass} />
+              <TelemetryItem label="Hız" value="0.0" unit="m/s" colorClass={themeColorClass} />
+              <TelemetryItem label="Enlem" value={activeDrone.lat.toFixed(5)} unit="°" colorClass={themeColorClass} />
+              <TelemetryItem label="Boylam" value={activeDrone.lon.toFixed(5)} unit="°" colorClass={themeColorClass} />
+              <TelemetryItem label="Başlık" value={activeDrone.heading.toFixed(0)} unit="°" colorClass={themeColorClass} />
+              <TelemetryItem label="Batarya" value={activeDrone.battery} unit="%" colorClass="text-emerald-500" />
             </div>
           </Card>
 
-          <Card title="GPS Coordinates" icon={Navigation}>
-            <div className="grid gap-4">
-              <TelemetryItem label="Latitude" value={(telemetry.lat || 0).toFixed(6)} unit="deg" color="orange" />
-              <TelemetryItem label="Longitude" value={(telemetry.lon || 0).toFixed(6)} unit="deg" color="orange" />
-            </div>
-          </Card>
-
-          {/* Simple Map Frame */}
-          <div className="flex-grow min-h-[300px] border border-cyan-500/20 rounded-xl overflow-hidden bg-black/40">
-            <div className="h-full w-full">
-              <MapContainer 
-                center={[telemetry.lat || 0, telemetry.lon || 0]} 
-                zoom={15} 
-                style={{ height: '100%', width: '100%' }}
-                zoomControl={false}
-              >
-                <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
-                <ChangeView center={[telemetry.lat || 0, telemetry.lon || 0]} />
-                {telemetry.lat !== 0 && (
-                  <Marker 
-                    position={[telemetry.lat, telemetry.lon]} 
-                    icon={new L.DivIcon({
-                      html: `<div style="transform: rotate(${telemetry.heading || 0}deg); transition: transform 0.5s ease-in-out;">
-                              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 8px rgba(6,182,212,0.8))">
-                                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
-                                <path d="m12 8 4 4-4 4-4-4z"/>
-                                <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
-                              </svg>
-                            </div>`,
-                      className: 'custom-drone-icon',
-                      iconSize: [40, 40],
-                      iconAnchor: [20, 20]
-                    })}
-                  />
-                )}
-              </MapContainer>
-            </div>
+          <div className={cn("flex-grow border rounded-xl overflow-hidden relative min-h-[300px]", themeBorderClass)}>
+            <MapContainer 
+              center={userLocation} 
+              zoom={16} 
+              style={{ height: '100%', width: '100%' }} 
+              zoomControl={false}
+            >
+              <TileLayer 
+                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" 
+                attribution="Esri World Imagery"
+                maxZoom={19}
+              />
+              <ChangeView 
+                center={activeDrone.lat !== 0 ? [activeDrone.lat, activeDrone.lon] : userLocation} 
+                zoom={16}
+              />
+              {displayDrones.map(d => d.lat !== 0 && (
+                <Marker key={d.id} position={[d.lat, d.lon]} icon={new L.DivIcon({
+                  html: `<div style="transform: rotate(${d.heading}deg); transition: all 0.5s;">
+                          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="${d.id === 1 ? '#06b6d4' : '#ef4444'}" stroke-width="2.5" style="filter: drop-shadow(0 0 8px ${d.id === activeDrone.id ? (d.id === 1 ? '#06b6d4' : '#ef4444') : 'transparent'})">
+                            ${d.id === 1 
+                              ? '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>' // Eye Icon
+                              : '<circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/>' // Crosshair Icon
+                            }
+                          </svg>
+                          <span style="position:absolute; top:-14px; left:50%; transform:translateX(-50%); color:white; font-size:9px; font-weight:black; background:${d.id === 1 ? '#06b6d4' : '#ef4444'}; padding:0 4px; border-radius:3px; white-space:nowrap">${d.id === 1 ? 'GÖZLEMCİ' : 'SALDIRI'}</span>
+                        </div>`,
+                  className: '', iconSize: [36, 36], iconAnchor: [18, 18]
+                })} />
+              ))}
+            </MapContainer>
+            <div className="absolute top-2 right-2 bg-black/80 text-[8px] font-black p-1 rounded border border-white/10 z-[1000] uppercase tracking-widest">Uydu Takibi Aktif</div>
           </div>
         </div>
 
-        {/* Center: Video & Map */}
         <div className="col-span-6 flex flex-col gap-4">
-          <div className="flex-grow flex flex-col gap-4 h-full">
-            {/* Video Stream */}
-            <div className="flex-grow bg-black border border-cyan-500/30 rounded-xl relative group overflow-hidden shadow-2xl">
-              {/* Scanline effect overlay */}
-              <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.02),rgba(0,255,0,0.01),rgba(0,0,255,0.02))] z-10 bg-[length:100%_2px,3px_100%]" />
-              
-              <div className="absolute inset-0 flex items-center justify-center bg-zinc-900/50">
-                <div className="text-center">
-                  <Video className="w-12 h-12 text-cyan-500/20 mx-auto mb-2 animate-pulse" />
-                  <p className="text-cyan-500/40 font-mono text-sm tracking-widest uppercase">Awaiting Video Feed...</p>
+          <div className={cn("h-2/3 bg-black border rounded-2xl relative overflow-hidden group transition-all duration-700", themeBorderClass)}>
+            {isAttackMode && (
+              <div className="absolute inset-0 z-20 pointer-events-none flex items-center justify-center">
+                <div className="w-64 h-64 border border-red-500/20 rounded-full animate-pulse flex items-center justify-center">
+                  <div className="w-48 h-48 border border-red-500/40 rounded-full flex items-center justify-center">
+                    <div className="w-1 h-1 bg-red-500" />
+                    <div className="absolute w-full h-[1px] bg-red-500/30" />
+                    <div className="absolute h-full w-[1px] bg-red-500/30" />
+                  </div>
+                </div>
+                <div className="absolute top-10 left-10 w-12 h-12 border-t-4 border-l-4 border-red-500/50" />
+                <div className="absolute top-10 right-10 w-12 h-12 border-t-4 border-r-4 border-red-500/50" />
+                <div className="absolute bottom-10 left-10 w-12 h-12 border-b-4 border-l-4 border-red-500/50" />
+                <div className="absolute bottom-10 right-10 w-12 h-12 border-b-4 border-r-4 border-red-500/50" />
+              </div>
+            )}
+            
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.02),rgba(0,255,0,0.01),rgba(0,0,255,0.02))] z-10 bg-[length:100%_4px,4px_100%]" />
+            <div className="absolute inset-0 flex items-center justify-center bg-[#080a0c]">
+              <div className="text-center flex flex-col items-center">
+                <img src={logo} alt="Aerokou" className="w-64 h-auto opacity-10 mb-6" />
+                <div className="opacity-20 flex flex-col items-center">
+                  <Video className={cn("w-12 h-12 mb-4 animate-pulse", isAttackMode ? "text-red-500" : "text-cyan-500")} />
+                  <p className="font-mono text-[10px] tracking-[0.5em] uppercase font-black">Video Akışı Bekleniyor</p>
                 </div>
               </div>
             </div>
           </div>
 
-          <Card 
-            title="Mission Logs" 
-            icon={LogIcon} 
-            className="h-48"
-            extra={
-              <button 
-                onClick={clearLogs}
-                className="text-[10px] font-bold text-cyan-500/40 hover:text-cyan-400 transition-colors uppercase tracking-tighter"
-              >
-                [ Clear ]
-              </button>
-            }
-          >
-            <div className="font-mono text-[11px] overflow-y-auto h-full space-y-1 scrollbar-hide">
+          <Card title="Sistem Kayıtları" icon={LogIcon} className={cn("flex-grow", themeBorderClass)}>
+            <div className="font-mono text-[10px] h-full overflow-y-auto space-y-2 scrollbar-hide pr-2">
               {logs.map((log, i) => (
-                <div key={i} className="flex gap-2">
-                  <span className="text-gray-600">[{log.time}]</span>
-                  <span className={cn({
-                    "text-cyan-400": log.type === "info",
+                <div key={i} className="flex gap-4 border-l-2 border-white/5 pl-3 py-0.5">
+                  <span className="text-white/20 shrink-0 font-bold tracking-tighter">{log.time}</span>
+                  <span className={cn("tracking-tight font-medium", {
+                    "text-cyan-400": log.type === "info" && !isAttackMode,
+                    "text-red-400": log.type === "info" && isAttackMode,
                     "text-orange-400": log.type === "warning",
-                    "text-red-400": log.type === "error",
+                    "text-red-600 font-black": log.type === "error",
                     "text-emerald-400": log.type === "success",
                   })}>{log.msg}</span>
                 </div>
@@ -345,61 +264,32 @@ export default function App() {
           </Card>
         </div>
 
-        {/* Right: Controls */}
         <div className="col-span-3 flex flex-col gap-4">
-          <Card title="Primary Controls" icon={Power}>
+          <Card title="Operasyonel Güç" icon={Power} className={themeBorderClass}>
             <div className="grid gap-3">
-              <button 
-                onClick={() => sendCommand('arm')}
-                className="w-full py-3 bg-red-500/10 border border-red-500/40 text-red-400 font-bold rounded-lg hover:bg-red-500/20 transition-all flex items-center justify-center gap-2"
-              >
-                <ShieldAlert className="w-4 h-4" /> ARM SYSTEM
+              <button onClick={() => sendCommand('arm', activeDroneIdx + 1)} className={cn("w-full py-4 font-black rounded-xl transition-all flex items-center justify-center gap-3 text-xs tracking-widest", isAttackMode ? "bg-red-500/20 border-2 border-red-500 text-red-500 hover:bg-red-500/30" : "bg-cyan-500/20 border-2 border-cyan-500 text-cyan-500 hover:bg-cyan-500/30")}>
+                <ShieldAlert className="w-5 h-5" /> {isAttackMode ? "SALDIRI SİSTEMLERİ AKTİF" : "SİSTEMİ ARM ET"}
               </button>
-              <button 
-                onClick={() => sendCommand('disarm')}
-                className="w-full py-3 bg-zinc-800 border border-white/10 text-white font-bold rounded-lg hover:bg-zinc-700 transition-all"
-              >
-                DISARM
-              </button>
+              <button onClick={() => sendCommand('disarm', activeDroneIdx + 1)} className="w-full py-3 bg-zinc-900 border border-white/5 text-gray-500 font-bold rounded-xl hover:bg-zinc-800 transition-all text-[9px] tracking-[0.2em]">GÜVENLİ DISARM</button>
             </div>
           </Card>
 
-          <Card title="Flight Modes" icon={Activity}>
+          <Card title="Uçuş Modu Seçimi" icon={Activity} className={themeBorderClass}>
             <div className="grid grid-cols-2 gap-2">
-              {['GUIDED', 'AUTO', 'RTL', 'LAND'].map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => changeMode(mode)}
-                  className={cn(
-                    "py-2 px-1 text-[10px] font-bold rounded border transition-all",
-                    telemetry.mode === mode 
-                      ? "bg-cyan-500 border-cyan-400 text-black" 
-                      : "bg-cyan-500/5 border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/10"
-                  )}
-                >
-                  {mode}
-                </button>
+              {['GUIDED', 'AUTO', 'RTL', 'LAND'].map(mode => (
+                <button key={mode} onClick={() => sendCommand('mode', activeDroneIdx + 1)} className={cn("py-3 text-[10px] font-black rounded-lg border transition-all tracking-widest", activeDrone.mode === mode ? (isAttackMode ? "bg-red-500 border-red-400 text-black shadow-[0_0_15px_rgba(239,68,68,0.4)]" : "bg-cyan-500 border-cyan-400 text-black shadow-[0_0_15px_rgba(6,182,212,0.4)]") : "bg-white/5 border-white/5 text-white/40 hover:bg-white/10")}>{mode}</button>
               ))}
             </div>
           </Card>
 
-          <Card title="Flight Actions" icon={ArrowUp}>
+          <Card title="Görev İcra" icon={ArrowUp} className={themeBorderClass}>
             <div className="grid gap-3">
-              <button 
-                onClick={() => sendCommand('start-mission')}
-                className="w-full py-4 bg-cyan-500 text-black font-black rounded-lg hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-              >
-                <ArrowUp className="w-5 h-5" /> START-MISSION
+              <button onClick={() => sendCommand('start-mission')} className={cn("w-full py-5 text-black font-black rounded-2xl transition-all flex items-center justify-center gap-3 text-sm tracking-tighter shadow-lg", isAttackMode ? "bg-red-600 shadow-red-900/40" : "bg-cyan-600 shadow-cyan-900/40")}>
+                <ArrowUp className="w-5 h-5" /> GÖREVİ BAŞLAT (TÜM BİRİMLER)
               </button>
-              <button 
-                onClick={() => sendCommand('failsafe-mission')}
-                className="w-full py-4 bg-red-500 text-black font-black rounded-lg hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-              >
-                <ArrowDown className="w-5 h-5" /> FAILSAFE
-              </button>
+              <button onClick={() => sendCommand('failsafe-mission')} className={cn("w-full py-4 border", isAttackMode ? "text-cyan-500 bg-cyan-950/40 hover:bg-cyan-900/40 border-cyan-900/30" : "text-red-500 bg-red-950/40 hover:bg-red-900/40 border-red-900/30" , "font-black rounded-xl transition-all text-[10px] tracking-widest uppercase")}>Acil Durum / Failsafe</button>
             </div>
           </Card>
-        
         </div>
       </div>
     </div>

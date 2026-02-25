@@ -61,20 +61,12 @@ app.add_middleware(
 
 # --- Global State ---
 vehicle_instance: Optional[Vehicle] = None
-telemetry_data: Dict[str, Any] = {
-    "connected": False,
-    "lat": 0.0,
-    "lon": 0.0,
-    "alt": 0.0,
-    "mode": "UNKNOWN",
-    "armed": False,
-    "heading": 0.0,
-    "last_update": 0,
-    "logs": []
-}
+# telemetry_data now stores multiple drones keyed by their ID
+telemetry_data: Dict[int, Any] = {}
+global_logs: List[Dict[str, Any]] = []
+state_lock = threading.Lock()
 stop_event = threading.Event()
 system_running = threading.Event()
-state_lock = threading.Lock()
         
 with open(CONFIG_FILE, "r") as f:
     conf = json.load(f)
@@ -96,16 +88,18 @@ class TakeoffRequest(BaseModel):
 
 class ModeRequest(BaseModel):
     mode: str
+    drone_id: Optional[int] = None
 
 class GotoRequest(BaseModel):
     lat: float
     lon: float
     alt: float
+    drone_id: Optional[int] = None
 
 # --- Background Telemetry Logic ---
-def telemetry_update_loop(drone_id: int):
-    global vehicle_instance, telemetry_data
-    print(f"[Telemetry] Loop started for Drone ID: {drone_id}")
+def telemetry_update_loop():
+    global vehicle_instance, telemetry_data, global_logs
+    print("[Telemetry] Loop started")
     
     # We need an event loop to handle broadcasting
     loop = asyncio.new_event_loop()
@@ -113,27 +107,28 @@ def telemetry_update_loop(drone_id: int):
 
     async def broadcast_telemetry():
         while not system_running.is_set():
-            if telemetry_data["connected"]:
-                # Collect logs to send via WS too
-                with state_lock:
-                    current_logs = list(telemetry_data["logs"])
-                    telemetry_data["logs"] = []
+            with state_lock:
+                # Prepare data for broadcast
+                drones_list = []
+                for d_id, data in telemetry_data.items():
+                    drones_list.append({
+                        "id": d_id,
+                        **data
+                    })
+                
+                current_logs = list(global_logs)
+                global_logs.clear()
 
+            if drones_list or current_logs:
                 await manager.broadcast({
                     "type": "telemetry",
                     "data": {
-                        "connected": True,
-                        "lat": telemetry_data["lat"],
-                        "lon": telemetry_data["lon"],
-                        "alt": telemetry_data["alt"],
-                        "mode": telemetry_data["mode"],
-                        "armed": telemetry_data["armed"],
-                        "heading": telemetry_data["heading"],
-                        "last_update": telemetry_data["last_update"],
-                        "logs": current_logs
+                        "drones": drones_list,
+                        "logs": current_logs,
+                        "connected": len(drones_list) > 0
                     }
                 })
-            await asyncio.sleep(0.1) # 10Hz Broadcast Rate
+            await asyncio.sleep(0.2) # 5Hz Broadcast Rate
 
     # Start the broadcast task in the background
     threading.Thread(target=loop.run_until_complete, args=(broadcast_telemetry(),), daemon=True).start()
@@ -144,51 +139,59 @@ def telemetry_update_loop(drone_id: int):
             continue
             
         try:
-            # We don't want the global stop_event to kill the telemetry loop, 
-            # but the Vehicle methods use it. So we must ensure it's clear 
-            # for telemetry to work.
-            if stop_event.is_set() and not system_running.is_set():
-                pass
+            # Get all detected drone IDs
+            ids = vehicle_instance.drone_ids
+            if not ids:
+                # If no IDs yet, try to fetch them
+                vehicle_instance.get_all_drone_ids()
+                ids = vehicle_instance.drone_ids
 
-            with state_lock:
-                # Poll position - Note: get_pos uses stop_event internally!
-                pos = vehicle_instance.get_pos(drone_id=drone_id)
-                if isinstance(pos, tuple) and len(pos) == 3:
-                    telemetry_data["lat"], telemetry_data["lon"], telemetry_data["alt"] = pos
-                
-                # Poll status
-                telemetry_data["mode"] = vehicle_instance.get_mode(drone_id=drone_id)
-                telemetry_data["armed"] = vehicle_instance.is_armed(drone_id=drone_id) == 1
-                telemetry_data["heading"] = vehicle_instance.get_yaw(drone_id=drone_id)
-                telemetry_data["last_update"] = time.time()
-                telemetry_data["connected"] = True
+            for d_id in ids:
+                try:
+                    # Poll position
+                    pos = vehicle_instance.get_pos(drone_id=d_id)
+                    
+                    with state_lock:
+                        if d_id not in telemetry_data:
+                            telemetry_data[d_id] = {
+                                "lat": 0.0, "lon": 0.0, "alt": 0.0,
+                                "mode": "UNKNOWN", "armed": False, "heading": 0.0
+                            }
+                        
+                        if isinstance(pos, tuple) and len(pos) == 3:
+                            telemetry_data[d_id]["lat"], telemetry_data[d_id]["lon"], telemetry_data[d_id]["alt"] = pos
+                        
+                        # Poll status
+                        telemetry_data[d_id]["mode"] = vehicle_instance.get_mode(drone_id=d_id)
+                        telemetry_data[d_id]["armed"] = vehicle_instance.is_armed(drone_id=d_id) == 1
+                        telemetry_data[d_id]["heading"] = vehicle_instance.get_yaw(drone_id=d_id)
+                except Exception as e:
+                    print(f"[Telemetry] Error updating drone {d_id}: {e}")
                 
         except Exception as e:
-            # If it fails due to stop_event, we don't want to mark it as disconnected permanently
-            telemetry_data["connected"] = False
+            print(f"[Telemetry] Loop error: {e}")
         
-        time.sleep(0.2) # Reduced frequency to be safer with blocking calls
+        time.sleep(0.1)
 
 # --- Lifecycle Events ---
 @app.on_event("startup")
 async def startup_event():
     global vehicle_instance
     try:
-        
         print(f"[System] Connecting to vehicle on {conn_port}...")
         
         def init_vehicle():
             global vehicle_instance
             try:
+                # Initial drone_id from config, but it will discover others
                 vehicle_instance = Vehicle(conn_port, stop_event=stop_event, drone_id=drone_id)
-                t = threading.Thread(target=telemetry_update_loop, args=(drone_id,), daemon=True)
+                t = threading.Thread(target=telemetry_update_loop, daemon=True)
                 t.start()
                 print("[System] Backend initialized and telemetry loop running.")
             except Exception as e:
                 print(f"[Error] Vehicle connection failed: {e}")
 
         threading.Thread(target=init_vehicle, daemon=True).start()
-        
     except Exception as e:
         print(f"[Error] Initialization failed: {e}")
 
@@ -236,97 +239,75 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/telemetry")
 def get_telemetry():
-    """Returns the current real-time state of the drone with random jitter for testing."""
-    import random
-    
+    """Returns the current real-time state of all drones."""
     with state_lock:
-        current_logs = list(telemetry_data["logs"])
-        telemetry_data["logs"] = [] # Clear logs after sending
+        current_logs = list(global_logs)
+        global_logs.clear()
+        
+        drones_list = []
+        for d_id, data in telemetry_data.items():
+            drones_list.append({"id": d_id, **data})
 
-        if telemetry_data["connected"]:
-            return {
-                "connected": True,
-                "lat": telemetry_data["lat"],
-                "lon": telemetry_data["lon"],
-                "alt": telemetry_data["alt"],
-                "mode": telemetry_data["mode"],
-                "armed": telemetry_data["armed"],
-                "heading": telemetry_data["heading"],
-                "last_update": telemetry_data["last_update"],
-                "logs": current_logs
-            }
-        else:
-            return {
-                "connected": False,
-                "lat": 0.00,
-                "lon": 0.00,
-                "alt": 0,
-                "mode": "NONE",
-                "armed": False,
-                "heading": 0.0,
-                "last_update": time.time(),
-                "test_jitter": True,
-                "logs": current_logs
-            }
+        return {
+            "connected": len(drones_list) > 0,
+            "drones": drones_list,
+            "logs": current_logs
+        }
 
 @app.post("/command/arm", response_model=CommandResponse)
-def arm_drone():
+def arm_drone(drone_id: Optional[int] = None):
     if not vehicle_instance: raise HTTPException(503, "Drone not connected")
-    vehicle_instance.arm_disarm(arm=True)
-    return CommandResponse(status="success", message="Arm command sent")
+    target_ids = [drone_id] if drone_id else vehicle_instance.drone_ids
+    for d_id in target_ids:
+        vehicle_instance.arm_disarm(arm=True, drone_id=d_id)
+    return CommandResponse(status="success", message=f"Arm command sent to {len(target_ids)} drone(s)")
 
 @app.post("/command/disarm", response_model=CommandResponse)
-def disarm_drone():
+def disarm_drone(drone_id: Optional[int] = None):
     if not vehicle_instance: raise HTTPException(503, "Drone not connected")
-    vehicle_instance.arm_disarm(arm=False)
-    return CommandResponse(status="success", message="Disarm command sent")
+    target_ids = [drone_id] if drone_id else vehicle_instance.drone_ids
+    for d_id in target_ids:
+        vehicle_instance.arm_disarm(arm=False, drone_id=d_id)
+    return CommandResponse(status="success", message=f"Disarm command sent to {len(target_ids)} drone(s)")
 
 @app.post("/command/mode", response_model=CommandResponse)
 def set_drone_mode(request: ModeRequest):
     if not vehicle_instance: raise HTTPException(503, "Drone not connected")
+    target_ids = [request.drone_id] if request.drone_id else vehicle_instance.drone_ids
     try:
-        vehicle_instance.set_mode(mode=request.mode.upper())
-        return CommandResponse(status="success", message=f"Mode changed to {request.mode}")
+        for d_id in target_ids:
+            vehicle_instance.set_mode(mode=request.mode.upper(), drone_id=d_id)
+        return CommandResponse(status="success", message=f"Mode changed to {request.mode} for {len(target_ids)} drone(s)")
     except Exception as e:
         raise HTTPException(500, f"Failed to change mode: {str(e)}")
 
 @app.post("/command/start-mission", response_model=CommandResponse)
-def start_mission(background_tasks: BackgroundTasks):
+def start_mission(background_tasks: BackgroundTasks, drone_id: Optional[int] = None):
     if not vehicle_instance: raise HTTPException(503, "Drone not connected")
     
-    # Reset stop_event to allow loops to run
     stop_event.clear()
+    target_ids = [drone_id] if drone_id else vehicle_instance.drone_ids
 
-    def handle_mission():
-        with state_lock: telemetry_data["logs"].append({"msg": "Mission starting: GUIDED mode", "type": "info"})
-        vehicle_instance.set_mode(mode="GUIDED")
-        vehicle_instance.arm_disarm(arm=True)
-        with state_lock: telemetry_data["logs"].append({"msg": f"Taking off to {ALT}m", "type": "info"})
-        vehicle_instance.multiple_takeoff(ALT)
+    def handle_mission(d_ids):
+        for d_id in d_ids:
+            with state_lock: global_logs.append({"msg": f"Drone {d_id}: Mission starting: GUIDED mode", "type": "info"})
+            vehicle_instance.set_mode(mode="GUIDED", drone_id=d_id)
+            vehicle_instance.arm_disarm(arm=True, drone_id=d_id)
+            with state_lock: global_logs.append({"msg": f"Drone {d_id}: Taking off to {ALT}m", "type": "info"})
+            vehicle_instance.multiple_takeoff(ALT, drone_id=d_id)
 
-        # TODO: drondan konum cekmek gerekince telemetry_data degiskenini kullan
-
-        while not stop_event.is_set():
-            if telemetry_data["alt"] * 1.1 >= ALT:
-                break
-        
-        with state_lock: telemetry_data["logs"].append({"msg": "Moving to destination", "type": "info"})
-        vehicle_instance.go_to(loc=LOC, alt=ALT)
-        print("Drone hedefe gidiyor")
-
+        # Basic wait loop (simplified for multiple drones)
         start_time = time.time()
-        while not stop_event.is_set():
-            if time.time() - start_time >= 0.5:
-                if vehicle_instance.on_location(loc=LOC, drone_loc=(telemetry_data["lat"], telemetry_data["lon"]), seq=0):
-                    break
+        while not stop_event.is_set() and time.time() - start_time < 30:
+            time.sleep(1)
         
-        with state_lock: telemetry_data["logs"].append({"msg": "Arrived at destination, landing", "type": "info"})
-        print("Drone konuma ulasti iniyor")
-        vehicle_instance.set_mode(mode="LAND")
+        for d_id in d_ids:
+            with state_lock: global_logs.append({"msg": f"Drone {d_id}: Moving to destination", "type": "info"})
+            vehicle_instance.go_to(loc=LOC, alt=ALT, drone_id=d_id)
+        
+    background_tasks.add_task(handle_mission, target_ids)
+    return CommandResponse(status="success", message=f"Mission initiated for {len(target_ids)} drone(s)")
 
-        
-    background_tasks.add_task(handle_mission)
-    return CommandResponse(status="success", message=f"Takeoff to {ALT}m initiated")
 
 @app.post("/command/failsafe-mission", response_model=CommandResponse)
 def failsafe_mission():

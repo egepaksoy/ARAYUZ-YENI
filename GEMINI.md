@@ -6,22 +6,22 @@ Bu dosya, projenin mimarisi, teknolojileri ve geliştirme standartları hakkınd
 Aerokou GCS, insansız hava araçlarının (İHA) MAVLink protokolü üzerinden gerçek zamanlı izlenmesi ve kontrol edilmesi için geliştirilmiş bir Yer Kontrol İstasyonu yazılımıdır. Sistem, düşük gecikmeli telemetri akışı ve modern bir kullanıcı arayüzü sunar.
 
 ### 🛠 Teknoloji Yığını
-- **Backend:** Python 3.x, FastAPI, Pymavlink (MAVLink iletişimi için).
-- **Frontend:** React (Vite), Tailwind CSS, Lucide-React (İkonlar), Leaflet (Harita).
-- **İletişim:** REST API (Komutlar için) ve HTTP Polling (Telemetri için - WebSocket planlanıyor).
+- **Backend:** Python 3.x, FastAPI, Pymavlink (MAVLink iletişimi için), Uvicorn.
+- **Frontend:** React 19 (Vite), Tailwind CSS 4, Lucide-React (İkonlar), React-Leaflet (Harita).
+- **İletişim:** REST API (Komutlar için) ve WebSocket (Gerçek zamanlı telemetri verileri için).
 
 ---
 
 ## 🏗 Mimari Yapı
 
 ### 📂 BACKEND (`/BACKEND`)
-- **`main.py`:** Ana uygulama sunucusu. Telemetri verilerini toplamak için arka planda bir thread çalıştırır ve frontend'den gelen komutları karşılar.
-- **`pymavlink_custom/`:** MAVLink paketlerini işleyen ve drone ile düşük seviyeli iletişimi sağlayan özel sınıflar.
-- **`config.json`:** Bağlantı portları (UDP/TCP), Drone ID'leri ve görev parametrelerini içerir.
+- **`main.py`:** Ana FastAPI sunucusu. Telemetri verilerini toplamak için arka planda bir thread çalıştırır ve WebSocket üzerinden istemcilere yayın yapar.
+- **`pymavlink_custom/`:** Drone ile düşük seviyeli iletişimi (MAVLink) sağlayan özel sınıflar (`Vehicle` sınıfı vb.).
+- **`config.json`:** Bağlantı portları (UDP/TCP), Drone ID'leri ve sistem parametrelerini içerir.
 
 ### 📂 FRONTEND (`/FRONTEND`)
-- **`src/App.jsx`:** Ana dashboard bileşeni. Telemetri verilerini görselleştirir, video yayınını (hazırlık aşamasında) ve harita takibini yönetir.
-- **Bileşenler:** HUD (üst bar), Telemetri Kartları, Harita (Leaflet), Görev Logları ve Kontrol Paneli.
+- **`src/App.jsx`:** Ana dashboard bileşeni. Telemetri verilerini görselleştirir, harita takibini ve drone komutlarını yönetir.
+- **Bileşenler:** HUD (üst bar), Telemetri Kartları, Harita (Leaflet), Kontrol Paneli ve Log Ekranı.
 
 ---
 
@@ -30,7 +30,7 @@ Aerokou GCS, insansız hava araçlarının (İHA) MAVLink protokolü üzerinden 
 ### Backend'i Başlatma
 ```bash
 cd BACKEND
-# Sanal ortamı etkinleştirin (isteğe bağlı)
+# Sanal ortamı etkinleştirin
 python main.py
 ```
 *Backend varsayılan olarak `http://localhost:8000` adresinde çalışır.*
@@ -47,17 +47,19 @@ npm run dev
 
 ## 📝 Geliştirme Konvansiyonları
 
-1.  **Telemetri Akışı:** Telemetri verileri backend'de `state_lock` ile korunur. Yeni bir veri eklenirken veya okunurken bu lock kullanılmalıdır.
-2.  **Hata Yönetimi:** Drone bağlantısı koptuğunda frontend'de "Bağlantı Bekleniyor" uyarısı gösterilir. Backend'deki komutlar drone bağlantısını kontrol etmeden işlem yapmamalıdır.
-3.  **UI/UX Standartları:** "Jarvis-style" karanlık tema (Siyah/Cyan/Kırmızı renk paleti) korunmalıdır.
-4.  **Görev Kontrolü:** `stop_event` nesnesi acil durum durdurmaları (Failsafe) için kullanılır. Yeni bir görev başlatılmadan önce bu event `clear()` edilmelidir.
+1.  **WebSocket Yönetimi:** Telemetri verileri `ConnectionManager` sınıfı üzerinden WebSocket ile anlık olarak frontend'e iletilir.
+2.  **Hata Yönetimi:** Drone bağlantısı koptuğunda veya backend'e ulaşılamadığında kullanıcı arayüzünde görsel uyarılar gösterilmelidir.
+3.  **UI/UX Standartları:** "Jarvis-style" karanlık tema (Siyah/Cyan/Kırmızı renk paleti) ve modern, teknolojik görünüm korunmalıdır.
+4.  **Asenkron Yapı:** Backend tarafında FastAPI'nin asenkron özellikleri ve telemetri toplama için arka plan iş parçacıkları (threading) kullanılır.
 
 ---
 
-## 📅 Yol Haritası (TODO)
-- [ ] Telemetri için WebSocket entegrasyonu.
+## 📅 Yol Haritası (Güncel Durum)
+- [x] FastAPI ve WebSocket entegrasyonu.
+- [x] Temel MAVLink komutları (Arm, Takeoff, Land, Goto).
+- [x] Harita entegrasyonu (Leaflet).
 - [ ] Canlı video akışı (MJPEG) entegrasyonu.
-- [ ] Çoklu drone desteğinin arayüze tam entegrasyonu.
-- [ ] Harita üzerinde waypoint (rota noktası) ekleme özelliği.
+- [ ] Çoklu drone desteğinin tam entegrasyonu.
+- [ ] Arayüzün Türkçe optimizasyonu.
 
 *Son Güncelleme: 25 Şubat 2026*

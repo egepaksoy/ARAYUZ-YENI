@@ -1,12 +1,39 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import sys
 import os
 import json
 import time
 import threading
+import asyncio
+import signal
+
+# --- WebSocket Connection Manager ---
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: set[WebSocket] = set()
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.add(websocket)
+        print(f"[WebSocket] Client connected. Total: {len(self.active_connections)}")
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+            print(f"[WebSocket] Client disconnected. Total: {len(self.active_connections)}")
+
+    async def broadcast(self, message: dict):
+        # Create a copy of the set to avoid issues if it changes during iteration
+        for connection in list(self.active_connections):
+            try:
+                await connection.send_json(message)
+            except Exception:
+                self.active_connections.remove(connection)
+
+manager = ConnectionManager()
 
 # --- Configuration & Paths ---
 PYMAVLINK_PATH = r"C:\Users\egepa\OneDrive\Masaüstü\AEROKOU\kodlar\UCUSKODLARI"
@@ -80,6 +107,37 @@ def telemetry_update_loop(drone_id: int):
     global vehicle_instance, telemetry_data
     print(f"[Telemetry] Loop started for Drone ID: {drone_id}")
     
+    # We need an event loop to handle broadcasting
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    async def broadcast_telemetry():
+        while not system_running.is_set():
+            if telemetry_data["connected"]:
+                # Collect logs to send via WS too
+                with state_lock:
+                    current_logs = list(telemetry_data["logs"])
+                    telemetry_data["logs"] = []
+
+                await manager.broadcast({
+                    "type": "telemetry",
+                    "data": {
+                        "connected": True,
+                        "lat": telemetry_data["lat"],
+                        "lon": telemetry_data["lon"],
+                        "alt": telemetry_data["alt"],
+                        "mode": telemetry_data["mode"],
+                        "armed": telemetry_data["armed"],
+                        "heading": telemetry_data["heading"],
+                        "last_update": telemetry_data["last_update"],
+                        "logs": current_logs
+                    }
+                })
+            await asyncio.sleep(0.1) # 10Hz Broadcast Rate
+
+    # Start the broadcast task in the background
+    threading.Thread(target=loop.run_until_complete, args=(broadcast_telemetry(),), daemon=True).start()
+
     while not system_running.is_set():
         if vehicle_instance is None:
             time.sleep(1)
@@ -90,10 +148,6 @@ def telemetry_update_loop(drone_id: int):
             # but the Vehicle methods use it. So we must ensure it's clear 
             # for telemetry to work.
             if stop_event.is_set() and not system_running.is_set():
-                # If stop_event is set but system is still running, 
-                # it means a mission was stopped, but we still want telemetry.
-                # However, the Vehicle class's recv_match loops will exit.
-                # So we should be careful.
                 pass
 
             with state_lock:
@@ -113,7 +167,7 @@ def telemetry_update_loop(drone_id: int):
             # If it fails due to stop_event, we don't want to mark it as disconnected permanently
             telemetry_data["connected"] = False
         
-        time.sleep(0.5) # Reduced frequency to be safer with blocking calls
+        time.sleep(0.2) # Reduced frequency to be safer with blocking calls
 
 # --- Lifecycle Events ---
 @app.on_event("startup")
@@ -140,15 +194,45 @@ async def startup_event():
 
 @app.on_event("shutdown")
 def shutdown_event():
+    print("[System] Shutting down...")
     system_running.set()
+    stop_event.set() # Bu çok önemli, blocking pymavlink çağrılarını uyandırır
+    
     if vehicle_instance:
-        vehicle_instance.vehicle.close()
-    print("[System] Connection closed.")
+        try:
+            vehicle_instance.vehicle.close()
+        except:
+            pass
+    print("[System] Connection closed and events set.")
+
+# --- Signal Handling for Clean Exit ---
+def handle_exit(sig, frame):
+    print(f"\n[System] Signal {sig} received, forcing exit...")
+    system_running.set()
+    stop_event.set()
+    # Give it a moment to cleanup then force exit
+    os._exit(0)
+
+signal.signal(signal.SIGINT, handle_exit)
+signal.signal(signal.SIGTERM, handle_exit)
 
 # --- API Endpoints ---
 @app.get("/")
 def root():
     return {"message": "AEROKOU Drone controll Backend is online."}
+
+@app.websocket("/ws/telemetry")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            # Just keep connection alive and wait for client to disconnect
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception as e:
+        print(f"[WebSocket] Error: {e}")
+        manager.disconnect(websocket)
 
 @app.get("/telemetry")
 def get_telemetry():

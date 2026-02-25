@@ -52,6 +52,9 @@ function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
 
+// Global WebSocket singleton to prevent double connections in StrictMode
+let globalWs = null;
+
 // --- Sub-Components ---
 
 const Card = ({ title, icon: Icon, children, className, extra }) => (
@@ -105,25 +108,57 @@ export default function App() {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
 
-  // Telemetry Polling
+  // WebSocket Connection
   useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch('http://localhost:8000/telemetry');
-        const data = await response.json();
-        setTelemetry(data);
-        
-        // Handle backend logs if present
-        if (data.logs && data.logs.length > 0) {
-          data.logs.forEach(log => {
-            addLog(log.msg, log.type);
-          });
-        }
-      } catch (err) {
-        setTelemetry(prev => ({ ...prev, connected: false }));
+    let reconnectTimeout;
+
+    const connect = () => {
+      // Eğer zaten bir bağlantı varsa yeni bağlantı açma
+      if (globalWs && (globalWs.readyState === WebSocket.OPEN || globalWs.readyState === WebSocket.CONNECTING)) {
+        return;
       }
-    }, 1500);
-    return () => clearInterval(interval);
+
+      console.log('[App] Initializing WebSocket...');
+      globalWs = new WebSocket('ws://localhost:8000/ws/telemetry');
+
+      globalWs.onopen = () => {
+        console.log('[App] WebSocket Connected');
+        setTelemetry(prev => ({ ...prev, connected: true }));
+      };
+
+      globalWs.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        if (message.type === 'telemetry') {
+          setTelemetry(message.data);
+          
+          if (message.data.logs && message.data.logs.length > 0) {
+            message.data.logs.forEach(log => {
+              addLog(log.msg, log.type);
+            });
+          }
+        }
+      };
+
+      globalWs.onclose = () => {
+        console.log('[App] WebSocket Disconnected. Retrying...');
+        setTelemetry(prev => ({ ...prev, connected: false }));
+        globalWs = null;
+        reconnectTimeout = setTimeout(connect, 3000);
+      };
+
+      globalWs.onerror = (err) => {
+        console.error('[App] WebSocket Error:', err);
+        if (globalWs) globalWs.close();
+      };
+    };
+
+    connect();
+
+    return () => {
+      // In production we would normally close it, but in development 
+      // StrictMode we keep it alive or let the singleton handle it.
+      clearTimeout(reconnectTimeout);
+    };
   }, []);
 
   const addLog = (msg, type = "info") => {
@@ -139,11 +174,11 @@ export default function App() {
     addLog(`Executing: ${cmd.toUpperCase()}...`, "warning");
     try {
       const response = await fetch(`http://localhost:8000/command/${cmd}`, { method: 'POST' });
-      if (response.ok) {
-        addLog(`System: ${cmd} success`, "success");
+      if (!response.ok) {
+        addLog(`Error: ${cmd} failed on server`, "error");
       }
     } catch (err) {
-      addLog(`Error: ${cmd} failed`, "error");
+      addLog(`Error: ${cmd} communication failure`, "error");
     }
   };
 
@@ -155,11 +190,11 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode })
       });
-      if (response.ok) {
-        addLog(`System: Mode ${mode} confirmed`, "success");
+      if (!response.ok) {
+        addLog(`Error: Mode change to ${mode} failed`, "error");
       }
     } catch (err) {
-      addLog(`Error: Mode change failed`, "error");
+      addLog(`Error: Mode change communication failure`, "error");
     }
   };
 
@@ -167,7 +202,7 @@ export default function App() {
     <div className="min-h-screen bg-[#05070a] bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-900/10 via-black to-black text-white p-6 font-sans selection:bg-cyan-500/30">
       
       {/* Backend Connection Overlay */}
-      {/* !telemetry.connected && (
+      { !telemetry.connected && (
         <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center">
           <div className="text-center p-8 border border-cyan-500/30 rounded-2xl bg-black/50 shadow-[0_0_50px_rgba(6,182,212,0.2)]">
             <div className="w-16 h-16 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin mx-auto mb-6"></div>
@@ -180,7 +215,6 @@ export default function App() {
           </div>
         </div>
       )}
-      {*/}
 
       {/* HUD Header */}
       <header className="flex justify-between items-center mb-6 border-b border-cyan-500/20 pb-4">

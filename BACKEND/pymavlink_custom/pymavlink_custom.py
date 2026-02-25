@@ -249,18 +249,20 @@ class Vehicle():
 
             start_time = time.time()
             while not self.stop_event.is_set():
-                message = self.vehicle.recv_match(type='GLOBAL_POSITION_INT', blocking=True)
+                # Added timeout=0.5 to allow checking stop_event
+                message = self.vehicle.recv_match(type='GLOBAL_POSITION_INT', blocking=True, timeout=0.5)
+                
+                if message is None:
+                    if time.time() - start_time > 5:
+                        print(f"UYARI 5 SANIYEDIR DRONE {drone_id} DEN KONUM CEKILEMEDI!!!")
+                        start_time = time.time()
+                    continue
 
                 if self.parse_message(message)[1] == drone_id:
                     lat = message.lat / 1e7
                     lon = message.lon / 1e7
                     alt = message.relative_alt / 1e3
                     return lat, lon, alt
-
-                if time.time() - start_time > 5:
-                    print(f"UYARI 5 SANIYEDIR DRONE {drone_id} DEN KONUM CEKILEMEDI!!!")
-                    start_time = time.time()
-
         except Exception as e:
             return e
 
@@ -593,18 +595,19 @@ class Vehicle():
                 
             start_time = time.time()
             while not self.stop_event.is_set():
-                msg = self.vehicle.recv_match(type="HEARTBEAT", blocking=True)
+                msg = self.vehicle.recv_match(type="HEARTBEAT", blocking=True, timeout=0.5)
+
+                if msg is None:
+                    if time.time() - start_time > 5:
+                        print(f"{drone_id}>> UYARI!!! 5 saniyedir arm durumu cekilmedi!!!")
+                        start_time = time.time()
+                    continue
 
                 if self.parse_message(msg)[1] == drone_id:
                     if msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED:
                         return 1
                     else:
                         return 0
-
-                if time.time() - start_time > 5:
-                    print(f"{drone_id}>> UYARI!!! 5 saniyedir arm durumu cekilmedi!!!")
-                    start_time = time.time()
-
         except Exception as e:
             return e
             
@@ -630,15 +633,16 @@ class Vehicle():
 
             start_time = time.time()
             while not self.stop_event.is_set():
-                msg = self.vehicle.recv_match(type="HEARTBEAT", blocking=True)
+                msg = self.vehicle.recv_match(type="HEARTBEAT", blocking=True, timeout=0.5)
                 
+                if msg is None:
+                    if time.time() - start_time > 5:
+                        print(f"{drone_id}>> UYARI!!! 5 SANiYEDiR MOD BiLGiSi ALINAMADI!!!")
+                        start_time = time.time()
+                    continue
+
                 if self.parse_message(msg)[1] == drone_id:
                     return mavutil.mode_string_v10(msg)
-
-                if time.time() - start_time > 5:
-                    print(f"{drone_id}>> UYARI!!! 5 SANiYEDiR MOD BiLGiSi ALINAMADI!!!")
-                    start_time = time.time()
-
         except Exception as e:
             return e
 

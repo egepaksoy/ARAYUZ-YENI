@@ -10,9 +10,9 @@
 
 - [x] harita
 
-- [ ] Harita konumu duzenle
+- [x] Harita konumu duzenle
 
-- [ ] Arayüzde kasma oluyo herşeyi beklemeden akış içinde yap (pymavlink v2)
+- [ ] Arayüzde kasma oluyo (muhtemelen time.sleep'lerden) herşeyi beklemeden akış içinde yap (pymavlink v2)
 
 ## Ahmet:
 
@@ -23,7 +23,6 @@
 - [ ] Drone datasında iki drone bilgilerini yaz
 
 - [ ] Arayüzde yazan bilgilerin Türkçe olması
-
 
 Drone kamera geçiş tuşunda drone idsi ve dronun anlık durumu yazsın:
 1 (Hedefleri arıyor) | 2 (Standby modunda)

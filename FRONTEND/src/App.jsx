@@ -54,12 +54,15 @@ function cn(...inputs) {
 
 // --- Sub-Components ---
 
-const Card = ({ title, icon: Icon, children, className }) => (
+const Card = ({ title, icon: Icon, children, className, extra }) => (
   <div className={cn("relative group bg-black/40 backdrop-blur-md border border-cyan-500/20 rounded-xl p-4 overflow-hidden", className)}>
     <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500/40 group-hover:bg-cyan-400 transition-colors" />
-    <div className="flex items-center gap-2 mb-4 border-b border-cyan-500/10 pb-2">
-      <Icon className="w-4 h-4 text-cyan-400" />
-      <h3 className="text-xs font-bold uppercase tracking-widest text-cyan-100/70">{title}</h3>
+    <div className="flex items-center justify-between mb-4 border-b border-cyan-500/10 pb-2">
+      <div className="flex items-center gap-2">
+        <Icon className="w-4 h-4 text-cyan-400" />
+        <h3 className="text-xs font-bold uppercase tracking-widest text-cyan-100/70">{title}</h3>
+      </div>
+      {extra}
     </div>
     {children}
   </div>
@@ -128,6 +131,10 @@ export default function App() {
     setLogs(prev => [...prev, { time, msg, type }]);
   };
 
+  const clearLogs = () => {
+    setLogs([]);
+  };
+
   const sendCommand = async (cmd) => {
     addLog(`Executing: ${cmd.toUpperCase()}...`, "warning");
     try {
@@ -140,11 +147,27 @@ export default function App() {
     }
   };
 
+  const changeMode = async (mode) => {
+    addLog(`Changing mode to: ${mode}...`, "warning");
+    try {
+      const response = await fetch('http://localhost:8000/command/mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode })
+      });
+      if (response.ok) {
+        addLog(`System: Mode ${mode} confirmed`, "success");
+      }
+    } catch (err) {
+      addLog(`Error: Mode change failed`, "error");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#05070a] bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-900/10 via-black to-black text-white p-6 font-sans selection:bg-cyan-500/30">
       
       {/* Backend Connection Overlay */}
-      {!telemetry.connected && (
+      {/* !telemetry.connected && (
         <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center">
           <div className="text-center p-8 border border-cyan-500/30 rounded-2xl bg-black/50 shadow-[0_0_50px_rgba(6,182,212,0.2)]">
             <div className="w-16 h-16 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin mx-auto mb-6"></div>
@@ -157,6 +180,7 @@ export default function App() {
           </div>
         </div>
       )}
+      {*/}
 
       {/* HUD Header */}
       <header className="flex justify-between items-center mb-6 border-b border-cyan-500/20 pb-4">
@@ -167,9 +191,6 @@ export default function App() {
           <div>
             <h1 className="text-xl font-black tracking-tighter uppercase italic">Aerokou <span className="text-cyan-500 font-light">GCS_v1.0</span></h1>
             <div className="flex gap-4 text-[10px] text-cyan-400/60 uppercase font-bold tracking-widest">
-              <span className="flex items-center gap-1"><Signal className="w-3 h-3" /> Link Status</span>
-              {/* Batarya kontrolu calisiyorsa dursun */}
-              <span className="flex items-center gap-1"><Battery className="w-3 h-3" /> {telemetry.battery}%</span>
             </div>
           </div>
         </div>
@@ -191,12 +212,12 @@ export default function App() {
       <div className="grid grid-cols-12 gap-6 h-[calc(100vh-160px)]">
         
         {/* Left: Telemetry Stats */}
-        <div className="col-span-3 flex flex-col gap-4">
+        <div className="col-span-3 flex flex-col gap-4 overflow-y-auto pr-2 scrollbar-hide">
           <Card title="Vertical Flight Data" icon={ArrowUp}>
             <div className="grid gap-6">
               <TelemetryItem label="Altitude" value={(telemetry.alt || 0).toFixed(1)} unit="m" color="cyan" />
               <TelemetryItem label="Vertical Speed" value="0.0" unit="m/s" />
-              <TelemetryItem label="Heading" value={telemetry.heading || 0} unit="°" />
+              <TelemetryItem label="Heading" value={(telemetry.heading || 0).toFixed(2)} unit="" />
             </div>
           </Card>
 
@@ -206,32 +227,10 @@ export default function App() {
               <TelemetryItem label="Longitude" value={(telemetry.lon || 0).toFixed(6)} unit="deg" color="orange" />
             </div>
           </Card>
-        </div>
 
-        {/* Center: Video & Map */}
-        <div className="col-span-6 flex flex-col gap-4">
-          <div className="flex-grow grid grid-rows-2 gap-4 h-full">
-            {/* Video Stream */}
-            <div className="bg-black border border-cyan-500/30 rounded-xl relative group overflow-hidden shadow-2xl">
-              {/* Scanline effect overlay */}
-              <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.02),rgba(0,255,0,0.01),rgba(0,0,255,0.02))] z-10 bg-[length:100%_2px,3px_100%]" />
-              
-              <div className="absolute inset-0 flex items-center justify-center bg-zinc-900/50">
-                <div className="text-center">
-                  <Video className="w-12 h-12 text-cyan-500/20 mx-auto mb-2 animate-pulse" />
-                  <p className="text-cyan-500/40 font-mono text-sm tracking-widest uppercase">Awaiting Video Feed...</p>
-                </div>
-              </div>
-              
-              {/* UI Overlay on Video */}
-              <div className="absolute top-4 right-4 flex gap-2 z-20">
-                <span className="bg-red-600 text-[10px] font-bold px-2 py-0.5 rounded animate-pulse">REC</span>
-                <span className="bg-black/60 text-[10px] font-bold px-2 py-0.5 rounded border border-white/10">00:12:44</span>
-              </div>
-            </div>
-
-            {/* Map */}
-            <div className="bg-black border border-cyan-500/30 rounded-xl relative overflow-hidden shadow-2xl">
+          {/* Simple Map Frame */}
+          <div className="flex-grow min-h-[300px] border border-cyan-500/20 rounded-xl overflow-hidden bg-black/40">
+            <div className="h-full w-full">
               <MapContainer 
                 center={[telemetry.lat || 0, telemetry.lon || 0]} 
                 zoom={15} 
@@ -261,17 +260,40 @@ export default function App() {
                   />
                 )}
               </MapContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* Center: Video & Map */}
+        <div className="col-span-6 flex flex-col gap-4">
+          <div className="flex-grow flex flex-col gap-4 h-full">
+            {/* Video Stream */}
+            <div className="flex-grow bg-black border border-cyan-500/30 rounded-xl relative group overflow-hidden shadow-2xl">
+              {/* Scanline effect overlay */}
+              <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.02),rgba(0,255,0,0.01),rgba(0,0,255,0.02))] z-10 bg-[length:100%_2px,3px_100%]" />
               
-              {/* Map Overlay Labels */}
-              <div className="absolute top-2 left-2 z-[1000] flex gap-2">
-                <span className="bg-black/80 backdrop-blur-md border border-cyan-500/30 text-[10px] font-bold px-2 py-1 rounded text-cyan-400 flex items-center gap-1">
-                  <MapIcon className="w-3 h-3" /> LIVE TRACKING
-                </span>
+              <div className="absolute inset-0 flex items-center justify-center bg-zinc-900/50">
+                <div className="text-center">
+                  <Video className="w-12 h-12 text-cyan-500/20 mx-auto mb-2 animate-pulse" />
+                  <p className="text-cyan-500/40 font-mono text-sm tracking-widest uppercase">Awaiting Video Feed...</p>
+                </div>
               </div>
             </div>
           </div>
 
-          <Card title="Mission Logs" icon={LogIcon} className="h-48">
+          <Card 
+            title="Mission Logs" 
+            icon={LogIcon} 
+            className="h-48"
+            extra={
+              <button 
+                onClick={clearLogs}
+                className="text-[10px] font-bold text-cyan-500/40 hover:text-cyan-400 transition-colors uppercase tracking-tighter"
+              >
+                [ Clear ]
+              </button>
+            }
+          >
             <div className="font-mono text-[11px] overflow-y-auto h-full space-y-1 scrollbar-hide">
               {logs.map((log, i) => (
                 <div key={i} className="flex gap-2">
@@ -305,6 +327,25 @@ export default function App() {
               >
                 DISARM
               </button>
+            </div>
+          </Card>
+
+          <Card title="Flight Modes" icon={Activity}>
+            <div className="grid grid-cols-2 gap-2">
+              {['GUIDED', 'AUTO', 'RTL', 'LAND'].map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => changeMode(mode)}
+                  className={cn(
+                    "py-2 px-1 text-[10px] font-bold rounded border transition-all",
+                    telemetry.mode === mode 
+                      ? "bg-cyan-500 border-cyan-400 text-black" 
+                      : "bg-cyan-500/5 border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/10"
+                  )}
+                >
+                  {mode}
+                </button>
+              ))}
             </div>
           </Card>
 

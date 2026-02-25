@@ -67,6 +67,9 @@ class CommandResponse(BaseModel):
 class TakeoffRequest(BaseModel):
     altitude: float
 
+class ModeRequest(BaseModel):
+    mode: str
+
 class GotoRequest(BaseModel):
     lat: float
     lon: float
@@ -83,8 +86,18 @@ def telemetry_update_loop(drone_id: int):
             continue
             
         try:
+            # We don't want the global stop_event to kill the telemetry loop, 
+            # but the Vehicle methods use it. So we must ensure it's clear 
+            # for telemetry to work.
+            if stop_event.is_set() and not system_running.is_set():
+                # If stop_event is set but system is still running, 
+                # it means a mission was stopped, but we still want telemetry.
+                # However, the Vehicle class's recv_match loops will exit.
+                # So we should be careful.
+                pass
+
             with state_lock:
-                # Poll position
+                # Poll position - Note: get_pos uses stop_event internally!
                 pos = vehicle_instance.get_pos(drone_id=drone_id)
                 if isinstance(pos, tuple) and len(pos) == 3:
                     telemetry_data["lat"], telemetry_data["lon"], telemetry_data["alt"] = pos
@@ -97,9 +110,10 @@ def telemetry_update_loop(drone_id: int):
                 telemetry_data["connected"] = True
                 
         except Exception as e:
+            # If it fails due to stop_event, we don't want to mark it as disconnected permanently
             telemetry_data["connected"] = False
         
-        time.sleep(0.2) # 5Hz update rate
+        time.sleep(0.5) # Reduced frequency to be safer with blocking calls
 
 # --- Lifecycle Events ---
 @app.on_event("startup")
@@ -183,36 +197,46 @@ def disarm_drone():
     vehicle_instance.arm_disarm(arm=False)
     return CommandResponse(status="success", message="Disarm command sent")
 
+@app.post("/command/mode", response_model=CommandResponse)
+def set_drone_mode(request: ModeRequest):
+    if not vehicle_instance: raise HTTPException(503, "Drone not connected")
+    try:
+        vehicle_instance.set_mode(mode=request.mode.upper())
+        return CommandResponse(status="success", message=f"Mode changed to {request.mode}")
+    except Exception as e:
+        raise HTTPException(500, f"Failed to change mode: {str(e)}")
+
 @app.post("/command/start-mission", response_model=CommandResponse)
 def start_mission(background_tasks: BackgroundTasks):
     if not vehicle_instance: raise HTTPException(503, "Drone not connected")
+    
+    # Reset stop_event to allow loops to run
+    stop_event.clear()
 
     def handle_mission():
         with state_lock: telemetry_data["logs"].append({"msg": "Mission starting: GUIDED mode", "type": "info"})
         vehicle_instance.set_mode(mode="GUIDED")
         vehicle_instance.arm_disarm(arm=True)
-        with state_lock: telemetry_data["logs"].append({"msg": f"Taking off to {ALT}m", "type": "warning"})
+        with state_lock: telemetry_data["logs"].append({"msg": f"Taking off to {ALT}m", "type": "info"})
         vehicle_instance.multiple_takeoff(ALT)
 
-        # TODO: burada stop_event eger kod failsafe ile kapatılırsa set olarak kalıyor. yani bidaha ucmuyor onun cozumunu dusun
+        # TODO: drondan konum cekmek gerekince telemetry_data degiskenini kullan
 
         while not stop_event.is_set():
-            if vehicle_instance.get_pos()[2] * 1.1 >= ALT:
+            if telemetry_data["alt"] * 1.1 >= ALT:
                 break
-            time.sleep(0.05)
         
-        with state_lock: telemetry_data["logs"].append({"msg": "Target reached, moving to destination", "type": "success"})
+        with state_lock: telemetry_data["logs"].append({"msg": "Moving to destination", "type": "info"})
         vehicle_instance.go_to(loc=LOC, alt=ALT)
         print("Drone hedefe gidiyor")
 
         start_time = time.time()
         while not stop_event.is_set():
             if time.time() - start_time >= 0.5:
-                if vehicle_instance.on_location(loc=LOC, seq=0):
+                if vehicle_instance.on_location(loc=LOC, drone_loc=(telemetry_data["lat"], telemetry_data["lon"]), seq=0):
                     break
-            time.sleep(0.05)
         
-        with state_lock: telemetry_data["logs"].append({"msg": "Arrived at destination, landing", "type": "success"})
+        with state_lock: telemetry_data["logs"].append({"msg": "Arrived at destination, landing", "type": "info"})
         print("Drone konuma ulasti iniyor")
         vehicle_instance.set_mode(mode="LAND")
 
@@ -243,7 +267,7 @@ def failsafe_mission():
                     print(f"{drone_id}>> RTL Alıyor...")
                     start_time = time.time()
 
-                if vehicle.on_location(loc=home_pos, seq=0, sapma=1, drone_id=drone_id):
+                if vehicle.on_location(loc=home_pos, drone_loc=(telemetry_data["lat"], telemetry_data["lon"]), drone_id=drone_id):
                     print(f"{drone_id}>> iniş gerçekleşiyor")
                     vehicle.set_mode(mode="LAND", drone_id=drone_id)
                     break

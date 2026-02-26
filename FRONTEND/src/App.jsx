@@ -81,8 +81,9 @@ export default function App() {
   const [logs, setLogs] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const [activeDroneIdx, setActiveDroneIdx] = useState(0); 
-  // Varsayılan konum (Kocaeli) - Drone verisi gelene kadar geçerli
-  const [userLocation] = useState([40.766, 29.917]); 
+  const [mapType, setMapType] = useState('SATELLITE'); // 'SATELLITE' veya 'STREET'
+  // Varsayılan konum (Kocaeli Üniversitesi Havacılık ve Uzay Bilimleri Fakültesi)
+  const [userLocation] = useState([40.712633, 30.026206]); 
   const logEndRef = useRef(null);
 
   const isAttackMode = activeDroneIdx === 1;
@@ -175,7 +176,7 @@ export default function App() {
               <TelemetryItem label="Hız" value="0.0" unit="m/s" colorClass={themeColorClass} />
               <TelemetryItem label="Enlem" value={activeDrone.lat.toFixed(5)} unit="°" colorClass={themeColorClass} />
               <TelemetryItem label="Boylam" value={activeDrone.lon.toFixed(5)} unit="°" colorClass={themeColorClass} />
-              <TelemetryItem label="Başlık" value={activeDrone.heading.toFixed(0)} unit="°" colorClass={themeColorClass} />
+              <TelemetryItem label="Açı" value={activeDrone.heading.toFixed(0)} unit="°" colorClass={themeColorClass} />
               <TelemetryItem label="Batarya" value={activeDrone.battery} unit="%" colorClass="text-emerald-500" />
             </div>
           </Card>
@@ -187,11 +188,45 @@ export default function App() {
               style={{ height: '100%', width: '100%' }} 
               zoomControl={false}
             >
-              <TileLayer 
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" 
-                attribution="Esri World Imagery"
-                maxZoom={19}
-              />
+              {mapType === 'SATELLITE' ? (
+                <TileLayer 
+                  url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" 
+                  attribution="Esri World Imagery"
+                  maxZoom={19}
+                />
+              ) : (
+                <TileLayer 
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" 
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  maxZoom={19}
+                />
+              )}
+              
+              <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
+                <button 
+                  onClick={() => setMapType('SATELLITE')}
+                  className={cn(
+                    "p-2 rounded-lg border transition-all flex items-center justify-center gap-2 text-[9px] font-black tracking-widest uppercase backdrop-blur-md",
+                    mapType === 'SATELLITE' 
+                      ? (isAttackMode ? "bg-red-500 border-red-400 text-black shadow-[0_0_10px_rgba(239,68,68,0.4)]" : "bg-cyan-500 border-cyan-400 text-black shadow-[0_0_10px_rgba(6,182,212,0.4)]")
+                      : "bg-black/60 border-white/10 text-white/70 hover:bg-black/80"
+                  )}
+                >
+                  <Video className="w-3 h-3" /> UYDU
+                </button>
+                <button 
+                  onClick={() => setMapType('STREET')}
+                  className={cn(
+                    "p-2 rounded-lg border transition-all flex items-center justify-center gap-2 text-[9px] font-black tracking-widest uppercase backdrop-blur-md",
+                    mapType === 'STREET' 
+                      ? (isAttackMode ? "bg-red-500 border-red-400 text-black shadow-[0_0_10px_rgba(239,68,68,0.4)]" : "bg-cyan-500 border-cyan-400 text-black shadow-[0_0_10px_rgba(6,182,212,0.4)]")
+                      : "bg-black/60 border-white/10 text-white/70 hover:bg-black/80"
+                  )}
+                >
+                  <MapIcon className="w-3 h-3" /> SOKAK
+                </button>
+              </div>
+
               <ChangeView 
                 center={activeDrone.lat !== 0 ? [activeDrone.lat, activeDrone.lon] : userLocation} 
                 zoom={16}
@@ -211,7 +246,7 @@ export default function App() {
                 })} />
               ))}
             </MapContainer>
-            <div className="absolute top-2 right-2 bg-black/80 text-[8px] font-black p-1 rounded border border-white/10 z-[1000] uppercase tracking-widest">Uydu Takibi Aktif</div>
+            <div className="absolute top-2 left-2 bg-black/80 text-[8px] font-black p-1 rounded border border-white/10 z-[1000] uppercase tracking-widest">Harita Takibi Aktif</div>
           </div>
         </div>
 
@@ -267,8 +302,8 @@ export default function App() {
         <div className="col-span-3 flex flex-col gap-4">
           <Card title="Operasyonel Güç" icon={Power} className={themeBorderClass}>
             <div className="grid gap-3">
-              <button onClick={() => sendCommand('arm', activeDroneIdx + 1)} className={cn("w-full py-4 font-black rounded-xl transition-all flex items-center justify-center gap-3 text-xs tracking-widest", isAttackMode ? "bg-red-500/20 border-2 border-red-500 text-red-500 hover:bg-red-500/30" : "bg-cyan-500/20 border-2 border-cyan-500 text-cyan-500 hover:bg-cyan-500/30")}>
-                <ShieldAlert className="w-5 h-5" /> {isAttackMode ? "SALDIRI SİSTEMLERİ AKTİF" : "SİSTEMİ ARM ET"}
+              <button onClick={() => sendCommand('arm', activeDroneIdx + 1)} className={cn("w-full py-4 font-black rounded-xl transition-all flex items-center justify-center gap-3 text-xs tracking-widest", isAttackMode ? "bg-red-500/20 border-2 border-red-500 text-red-500 hover:bg-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.2)]" : "bg-cyan-500/20 border-2 border-cyan-500 text-cyan-500 hover:bg-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.2)]")}>
+                <ShieldAlert className="w-5 h-5" /> SİSTEMİ ARM ET
               </button>
               <button onClick={() => sendCommand('disarm', activeDroneIdx + 1)} className="w-full py-3 bg-zinc-900 border border-white/5 text-gray-500 font-bold rounded-xl hover:bg-zinc-800 transition-all text-[9px] tracking-[0.2em]">GÜVENLİ DISARM</button>
             </div>
@@ -277,17 +312,17 @@ export default function App() {
           <Card title="Uçuş Modu Seçimi" icon={Activity} className={themeBorderClass}>
             <div className="grid grid-cols-2 gap-2">
               {['GUIDED', 'AUTO', 'RTL', 'LAND'].map(mode => (
-                <button key={mode} onClick={() => sendCommand('mode', activeDroneIdx + 1)} className={cn("py-3 text-[10px] font-black rounded-lg border transition-all tracking-widest", activeDrone.mode === mode ? (isAttackMode ? "bg-red-500 border-red-400 text-black shadow-[0_0_15px_rgba(239,68,68,0.4)]" : "bg-cyan-500 border-cyan-400 text-black shadow-[0_0_15px_rgba(6,182,212,0.4)]") : "bg-white/5 border-white/5 text-white/40 hover:bg-white/10")}>{mode}</button>
+                <button key={mode} onClick={() => sendCommand('mode', activeDroneIdx + 1)} className={cn("py-3 text-[10px] font-black rounded-lg border transition-all tracking-widest", activeDrone.mode === mode ? (isAttackMode ? "bg-red-500 border-red-400 text-black shadow-[0_0_25px_rgba(239,68,68,0.6)] scale-[1.02] brightness-125" : "bg-cyan-500 border-cyan-400 text-black shadow-[0_0_25px_rgba(6,182,212,0.6)] scale-[1.02] brightness-125") : "bg-white/5 border-white/5 text-white/40 hover:bg-white/10")}>{mode}</button>
               ))}
             </div>
           </Card>
 
           <Card title="Görev İcra" icon={ArrowUp} className={themeBorderClass}>
             <div className="grid gap-3">
-              <button onClick={() => sendCommand('start-mission')} className={cn("w-full py-5 text-black font-black rounded-2xl transition-all flex items-center justify-center gap-3 text-sm tracking-tighter shadow-lg", isAttackMode ? "bg-red-600 shadow-red-900/40" : "bg-cyan-600 shadow-cyan-900/40")}>
+              <button onClick={() => sendCommand('start-mission')} className={cn("w-full py-5 text-black font-black rounded-2xl transition-all flex items-center justify-center gap-3 text-sm tracking-tighter shadow-lg hover:scale-[1.01] active:scale-95", isAttackMode ? "bg-red-600 shadow-red-900/40 hover:shadow-red-500/50 hover:bg-red-500" : "bg-cyan-600 shadow-cyan-900/40 hover:shadow-cyan-500/50 hover:bg-cyan-500")}>
                 <ArrowUp className="w-5 h-5" /> GÖREVİ BAŞLAT (TÜM BİRİMLER)
               </button>
-              <button onClick={() => sendCommand('failsafe-mission')} className={cn("w-full py-4 border", isAttackMode ? "text-cyan-500 bg-cyan-950/40 hover:bg-cyan-900/40 border-cyan-900/30" : "text-red-500 bg-red-950/40 hover:bg-red-900/40 border-red-900/30" , "font-black rounded-xl transition-all text-[10px] tracking-widest uppercase")}>Acil Durum / Failsafe</button>
+              <button onClick={() => sendCommand('failsafe-mission')} className={cn("w-full py-4 border", isAttackMode ? "text-cyan-500 bg-cyan-950/40 hover:bg-cyan-900/40 border-cyan-900/30 hover:shadow-[0_0_15px_rgba(6,182,212,0.2)]" : "text-red-500 bg-red-950/40 hover:bg-red-900/40 border-red-900/30 hover:shadow-[0_0_15px_rgba(239,68,68,0.2)]" , "font-black rounded-xl transition-all text-[10px] tracking-widest uppercase hover:scale-[1.01] active:scale-95")}>Acil Durum / Failsafe</button>
             </div>
           </Card>
         </div>

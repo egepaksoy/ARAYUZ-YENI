@@ -14,6 +14,14 @@
 
 - [ ] Arayüzde kasma oluyo (muhtemelen time.sleep'lerden) herşeyi beklemeden akış içinde yap (pymavlink v2)
 
+- [ ] Gozlemci ve saldiri droneları aynı bilgiler goruntuleniyor
+
+- [ ] Haritada zoom in yapınca tekrar ortalamak icin zoom out yapıyor
+
+- [ ] iha bilgilerinde drone id'si de goruntulensin
+
+- [ ] Arayüz failsafe alınca kapanıyor ekran gidiyor
+
 ## Ahmet:
 
 - [ ] Kamera penceresini 2 tane yapıp ikisi arasında geçiş yap

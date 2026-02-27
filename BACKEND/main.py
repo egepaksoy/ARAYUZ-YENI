@@ -143,8 +143,7 @@ def telemetry_update_loop():
             ids = vehicle_instance.drone_ids
             if not ids:
                 # If no IDs yet, try to fetch them
-                vehicle_instance.get_all_drone_ids()
-                ids = vehicle_instance.drone_ids
+                ids = vehicle_instance.get_all_drone_ids()
 
             for d_id in ids:
                 try:
@@ -178,13 +177,11 @@ def telemetry_update_loop():
 async def startup_event():
     global vehicle_instance
     try:
-        print(f"[System] Connecting to vehicle on {conn_port}...")
-        
         def init_vehicle():
             global vehicle_instance
             try:
                 # Initial drone_id from config, but it will discover others
-                vehicle_instance = Vehicle(conn_port, stop_event=stop_event, drone_id=drone_id)
+                vehicle_instance = Vehicle(conn_port, stop_event=stop_event)
                 t = threading.Thread(target=telemetry_update_loop, daemon=True)
                 t.start()
                 print("[System] Backend initialized and telemetry loop running.")
@@ -218,6 +215,10 @@ def handle_exit(sig, frame):
 
 signal.signal(signal.SIGINT, handle_exit)
 signal.signal(signal.SIGTERM, handle_exit)
+
+# Frontend'e log gonderme
+def log_send(msg: str, type: str="info"):
+    with state_lock: global_logs.append({"msg": msg, "type": type})
 
 # --- API Endpoints ---
 @app.get("/")
@@ -260,6 +261,7 @@ def arm_drone(drone_id: Optional[int] = None):
     target_ids = [drone_id] if drone_id else vehicle_instance.drone_ids
     for d_id in target_ids:
         vehicle_instance.arm_disarm(arm=True, drone_id=d_id)
+        log_send(f"Drone {d_id}: Armed")
     return CommandResponse(status="success", message=f"Arm command sent to {len(target_ids)} drone(s)")
 
 @app.post("/command/disarm", response_model=CommandResponse)
@@ -268,6 +270,7 @@ def disarm_drone(drone_id: Optional[int] = None):
     target_ids = [drone_id] if drone_id else vehicle_instance.drone_ids
     for d_id in target_ids:
         vehicle_instance.arm_disarm(arm=False, drone_id=d_id)
+        log_send(f"Drone {d_id}: Disarmed")
     return CommandResponse(status="success", message=f"Disarm command sent to {len(target_ids)} drone(s)")
 
 @app.post("/command/mode", response_model=CommandResponse)
@@ -290,10 +293,10 @@ def start_mission(background_tasks: BackgroundTasks, drone_id: Optional[int] = N
 
     def handle_mission(d_ids):
         for d_id in d_ids:
-            with state_lock: global_logs.append({"msg": f"Drone {d_id}: Mission starting: GUIDED mode", "type": "info"})
+            log_send(f"Drone {d_id}: Mission starting: GUIDED mode")
             vehicle_instance.set_mode(mode="GUIDED", drone_id=d_id)
             vehicle_instance.arm_disarm(arm=True, drone_id=d_id)
-            with state_lock: global_logs.append({"msg": f"Drone {d_id}: Taking off to {ALT}m", "type": "info"})
+            log_send(f"Drone {d_id}: Taking off to {ALT}m")
             vehicle_instance.multiple_takeoff(ALT, drone_id=d_id)
 
         # Basic wait loop (simplified for multiple drones)
@@ -302,7 +305,7 @@ def start_mission(background_tasks: BackgroundTasks, drone_id: Optional[int] = N
             time.sleep(1)
         
         for d_id in d_ids:
-            with state_lock: global_logs.append({"msg": f"Drone {d_id}: Moving to destination", "type": "info"})
+            log_send(f"Drone {d_id}: Moving to destination")
             vehicle_instance.go_to(loc=LOC, alt=ALT, drone_id=d_id)
         
     background_tasks.add_task(handle_mission, target_ids)

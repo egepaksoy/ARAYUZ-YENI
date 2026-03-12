@@ -143,8 +143,15 @@ export default function App() {
   const activeDrone = displayDrones[activeDroneIdx] || displayDrones[0];
 
   return (
-    <div className={cn("min-h-screen bg-[#05070a] text-white p-6 font-sans transition-all duration-700", 
-      isAttackMode ? "bg-[radial-gradient(circle_at_center,_rgba(239,68,68,0.08)_0%,_black_100%)]" : "bg-[radial-gradient(circle_at_center,_rgba(6,182,212,0.08)_0%,_black_100%)]")}>
+    <div 
+      className={cn("min-h-screen bg-[#05070a] text-white p-6 font-sans transition-all duration-700", 
+        isAttackMode ? "bg-[radial-gradient(circle_at_center,_rgba(239,68,68,0.08)_0%,_black_100%)]" : "bg-[radial-gradient(circle_at_center,_rgba(6,182,212,0.08)_0%,_black_100%)]")}
+      style={{
+        '--theme-hover-glow': isAttackMode ? 'rgba(239, 68, 68, 0.1)' : 'rgba(6, 182, 212, 0.1)',
+        '--theme-hover-border': isAttackMode ? 'rgba(239, 68, 68, 0.4)' : 'rgba(6, 182, 212, 0.4)',
+        '--theme-grid-color': isAttackMode ? 'rgba(239, 68, 68, 0.05)' : 'rgba(6, 182, 212, 0.05)'
+      }}
+    >
       
       <header className={cn("flex justify-between items-center mb-6 border-b pb-4 transition-colors", isAttackMode ? "border-red-500/20" : "border-cyan-500/20")}>
         <div className="flex items-center gap-5">

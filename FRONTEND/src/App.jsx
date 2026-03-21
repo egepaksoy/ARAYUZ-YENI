@@ -114,6 +114,7 @@ export default function App() {
       };
       globalWs.onclose = () => {
         setIsConnected(false);
+        setDrones([]); // Bağlantı koptuğunda drone verilerini temizle (değerler 0'a döner)
         globalWs = null;
         reconnectTimeout = setTimeout(connect, 3000);
       };
@@ -160,7 +161,12 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-2xl font-black tracking-tighter italic uppercase">AEROKOU <span className={themeColorClass}>{isAttackMode ? "SALDIRI EKRANI" : "GÖZLEMCİ EKRANI"}</span></h1>
-            <p className="text-[10px] font-bold opacity-40 tracking-[0.3em]">SİSTEM DURUMU: {isConnected ? "ÇEVRİMİÇİ" : "ÇEVRİMDIŞI"}</p>
+            <div className="flex items-center gap-2">
+              <div className={cn("w-1.5 h-1.5 rounded-full", isConnected ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.5)]")} />
+              <p className={cn("text-[10px] font-bold tracking-[0.3em] uppercase transition-colors", isConnected ? "opacity-40" : "text-red-500 animate-pulse")}>
+                SİSTEM DURUMU: {isConnected ? "ÇEVRİMİÇİ" : "BAĞLANTI KESİLDİ"}
+              </p>
+            </div>
           </div>
         </div>
         
@@ -334,6 +340,24 @@ export default function App() {
           </Card>
         </div>
       </div>
+
+      {/* Küçük Yüzer Bağlantı Durumu */}
+      {!isConnected && (
+        <div className="fixed bottom-8 right-8 z-[9999] flex items-center gap-4 bg-black/80 border border-red-500/40 backdrop-blur-md px-6 py-4 rounded-2xl shadow-[0_0_30px_rgba(239,68,68,0.15)] animate-pulse">
+          <div className="relative">
+            <Activity className="w-5 h-5 text-red-500 animate-bounce" />
+            <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-ping" />
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[11px] font-black uppercase tracking-[0.2em] text-red-500">
+              Bağlantı bekleniyor...
+            </span>
+            <span className="text-[9px] font-bold text-white/30 uppercase tracking-widest">
+              Sunucu Aranıyor
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

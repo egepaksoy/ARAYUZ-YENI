@@ -162,8 +162,14 @@ export default function App() {
           <div>
             <h1 className="text-2xl font-black tracking-tighter italic uppercase">AEROKOU <span className={themeColorClass}>{isAttackMode ? "SALDIRI EKRANI" : "GÖZLEMCİ EKRANI"}</span></h1>
             <div className="flex items-center gap-2">
-              <div className={cn("w-1.5 h-1.5 rounded-full", isConnected ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.5)]")} />
-              <p className={cn("text-[10px] font-bold tracking-[0.3em] uppercase transition-colors", isConnected ? "opacity-40" : "text-red-500 animate-pulse")}>
+              <div className={cn("w-1.5 h-1.5 rounded-full", 
+                isConnected ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : 
+                (isAttackMode ? "bg-cyan-500 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.5)]" : "bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.5)]")
+              )} />
+              <p className={cn("text-[10px] font-bold tracking-[0.3em] uppercase transition-colors", 
+                isConnected ? "opacity-40" : 
+                (isAttackMode ? "text-cyan-500 animate-pulse" : "text-red-500 animate-pulse")
+              )}>
                 SİSTEM DURUMU: {isConnected ? "ÇEVRİMİÇİ" : "BAĞLANTI KESİLDİ"}
               </p>
             </div>
@@ -175,7 +181,7 @@ export default function App() {
             <Eye className="w-3.5 h-3.5" /> GÖZLEMCİ DRONE
           </button>
           <button onClick={() => setActiveDroneIdx(1)} className={cn("px-6 py-2.5 rounded-lg font-black text-[10px] tracking-widest transition-all flex items-center gap-2", activeDroneIdx === 1 ? "bg-red-500 text-black shadow-[0_0_20px_rgba(239,68,68,0.4)]" : "text-red-500/40 hover:text-red-400")}>
-            <Crosshair className="w-3.5 h-3.5" /> SALDIRI DRONE'U
+            <Crosshair className="w-3.5 h-3.5" /> SALDIRI DRONE
           </button>
         </div>
       </header>
@@ -343,13 +349,15 @@ export default function App() {
 
       {/* Küçük Yüzer Bağlantı Durumu */}
       {!isConnected && (
-        <div className="fixed bottom-8 right-8 z-[9999] flex items-center gap-4 bg-black/80 border border-red-500/40 backdrop-blur-md px-6 py-4 rounded-2xl shadow-[0_0_30px_rgba(239,68,68,0.15)] animate-pulse">
+        <div className={cn("fixed bottom-8 right-8 z-[9999] flex items-center gap-4 bg-black/80 border backdrop-blur-md px-6 py-4 rounded-2xl animate-pulse", 
+          isAttackMode ? "border-cyan-500/40 shadow-[0_0_30px_rgba(6,182,212,0.15)]" : "border-red-500/40 shadow-[0_0_30px_rgba(239,68,68,0.15)]"
+        )}>
           <div className="relative">
-            <Activity className="w-5 h-5 text-red-500 animate-bounce" />
-            <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-ping" />
+            <Activity className={cn("w-5 h-5 animate-bounce", isAttackMode ? "text-cyan-500" : "text-red-500")} />
+            <div className={cn("absolute -top-1 -right-1 w-2 h-2 rounded-full animate-ping", isAttackMode ? "bg-cyan-500" : "bg-red-500")} />
           </div>
           <div className="flex flex-col">
-            <span className="text-[11px] font-black uppercase tracking-[0.2em] text-red-500">
+            <span className={cn("text-[11px] font-black uppercase tracking-[0.2em]", isAttackMode ? "text-cyan-500" : "text-red-500")}>
               Bağlantı bekleniyor...
             </span>
             <span className="text-[9px] font-bold text-white/30 uppercase tracking-widest">

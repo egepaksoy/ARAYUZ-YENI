@@ -1,5 +1,7 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+import cv2
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 import sys
@@ -35,9 +37,63 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+# --- Video Management ---
+class VideoManager:
+    def __init__(self):
+        self.camera = None
+        self.last_frame = None
+        self.is_running = False
+        self.lock = threading.Lock()
+
+    def start(self):
+        if self.is_running:
+            return
+        self.is_running = True
+        # Windows için cv2.CAP_DSHOW ekleyerek daha stabil bir bağlantı sağlıyoruz
+        self.camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        
+        # Eğer DSHOW ile açılmazsa normal şekilde dene
+        if not self.camera.isOpened():
+            self.camera = cv2.VideoCapture(0)
+            
+        threading.Thread(target=self._capture_loop, daemon=True).start()
+        print("[Video] Camera attempt started")
+
+    def stop(self):
+        self.is_running = False
+        if self.camera:
+            self.camera.release()
+        print("[Video] Camera stopped")
+
+    def _capture_loop(self):
+        while self.is_running:
+            if not self.camera or not self.camera.isOpened():
+                time.sleep(1)
+                continue
+
+            success, frame = self.camera.read()
+            if success:
+                # Görüntüyü hafif küçülterek (opsiyonel) performansı artırabilirsiniz
+                # frame = cv2.resize(frame, (640, 480))
+                ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                if ret:
+                    with self.lock:
+                        self.last_frame = buffer.tobytes()
+            else:
+                # Görüntü alınamazsa kamerayı yeniden başlatmayı deneyebiliriz
+                print("[Video] Frame capture failed, retrying...")
+                time.sleep(0.5)
+            time.sleep(0.01) # Daha akıcı bir görüntü için bekleme süresini azalttık
+
+    def get_frame(self):
+        with self.lock:
+            return self.last_frame
+
+video_manager = VideoManager()
+
 # --- Configuration & Paths ---
-PYMAVLINK_PATH = r"C:\Users\egepa\OneDrive\Masaüstü\AEROKOU\kodlar\UCUSKODLARI"
-CONFIG_FILE = r"C:\Users\egepa\OneDrive\Masaüstü\25-26\ARAYUZ\BACKEND\config.json"
+PYMAVLINK_PATH = r"./"
+CONFIG_FILE = r"./config.json"
 
 if PYMAVLINK_PATH not in sys.path:
     sys.path.append(PYMAVLINK_PATH)
@@ -176,6 +232,7 @@ def telemetry_update_loop():
 @app.on_event("startup")
 async def startup_event():
     global vehicle_instance
+    video_manager.start()
     try:
         def init_vehicle():
             global vehicle_instance
@@ -197,6 +254,7 @@ def shutdown_event():
     print("[System] Shutting down...")
     system_running.set()
     stop_event.set() # Bu çok önemli, blocking pymavlink çağrılarını uyandırır
+    video_manager.stop()
     
     if vehicle_instance:
         try:
@@ -254,6 +312,19 @@ def get_telemetry():
             "drones": drones_list,
             "logs": current_logs
         }
+
+def generate_video_frames():
+    while True:
+        frame = video_manager.get_frame()
+        if frame is not None:
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        else:
+            time.sleep(0.1)
+
+@app.get("/video_feed")
+async def video_feed():
+    return StreamingResponse(generate_video_frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 @app.post("/command/arm", response_model=CommandResponse)
 def arm_drone(drone_id: Optional[int] = None):

@@ -289,7 +289,20 @@ export default function App() {
             
             <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.02),rgba(0,255,0,0.01),rgba(0,0,255,0.02))] z-10 bg-[length:100%_4px,4px_100%]" />
             <div className="absolute inset-0 flex items-center justify-center bg-[#080a0c]">
-              <div className="text-center flex flex-col items-center">
+              <img 
+                src="http://localhost:8000/video_feed" 
+                alt="Video Stream" 
+                className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-500"
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                  e.target.nextSibling.style.display = 'flex';
+                }}
+                onLoad={(e) => {
+                  e.target.style.display = 'block';
+                  if (e.target.nextSibling) e.target.nextSibling.style.display = 'none';
+                }}
+              />
+              <div className="hidden text-center flex flex-col items-center">
                 <img src={logo} alt="Aerokou" className="w-64 h-auto opacity-10 mb-6" />
                 <div className="opacity-20 flex flex-col items-center">
                   <Video className={cn("w-12 h-12 mb-4 animate-pulse", isAttackMode ? "text-red-500" : "text-cyan-500")} />

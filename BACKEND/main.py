@@ -274,8 +274,10 @@ def set_drone_mode(request: ModeRequest):
     if not vehicle_instance: raise HTTPException(503, "Drone not connected")
     try:
         vehicle_instance.set_mode(mode=request.mode.upper(), drone_id=request.drone_id)
+        log_send(f"Drone {request.drone_id}: Mode changed to {request.mode.upper()}")
         return CommandResponse(status="success", message=f"Mode changed to {request.mode} for {request.drone_id} drone")
     except Exception as e:
+        log_send(f"Failed to change mode: {str(e)}")
         raise HTTPException(500, f"Failed to change mode: {str(e)}")
 
 @app.post("/command/start-mission", response_model=CommandResponse)

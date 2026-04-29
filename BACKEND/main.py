@@ -254,25 +254,36 @@ def get_telemetry():
 @app.post("/command/arm", response_model=CommandResponse)
 def arm_drone(drone_id: Optional[int] = None):
     if not vehicle_instance: raise HTTPException(503, "Drone not connected")
-    target_ids = [drone_id] if drone_id else vehicle_instance.get_all_drone_ids()
-    for d_id in target_ids:
-        vehicle_instance.arm_disarm(arm=True, drone_id=d_id)
-        log_send(f"Drone {d_id}: Armed")
-    return CommandResponse(status="success", message=f"Arm command sent to {len(target_ids)} drone(s)")
+    try:
+        if drone_id == 0: Exception("Drone id 0 is none")
+        target_ids = [drone_id] if drone_id else vehicle_instance.get_all_drone_ids()
+        for d_id in target_ids:
+            vehicle_instance.arm_disarm(arm=True, drone_id=d_id)
+            log_send(f"Drone {d_id}: Armed")
+        return CommandResponse(status="success", message=f"Arm command sent to {len(target_ids)} drone(s)")
+    except Exception as e:
+        log_send(f"Failed to change mode: {str(e)}")
+        raise HTTPException(500, f"Failed to arm: {str(e)}")
 
 @app.post("/command/disarm", response_model=CommandResponse)
 def disarm_drone(drone_id: Optional[int] = None):
     if not vehicle_instance: raise HTTPException(503, "Drone not connected")
-    target_ids = [drone_id] if drone_id else vehicle_instance.get_all_drone_ids()
-    for d_id in target_ids:
-        vehicle_instance.arm_disarm(arm=False, drone_id=d_id)
-        log_send(f"Drone {d_id}: Disarmed")
-    return CommandResponse(status="success", message=f"Disarm command sent to {len(target_ids)} drone(s)")
+    try:
+        if drone_id == 0: Exception("Drone id 0 is none")
+        target_ids = [drone_id] if drone_id else vehicle_instance.get_all_drone_ids()
+        for d_id in target_ids:
+            vehicle_instance.arm_disarm(arm=False, drone_id=d_id)
+            log_send(f"Drone {d_id}: Disarmed")
+        return CommandResponse(status="success", message=f"Disarm command sent to {len(target_ids)} drone(s)")
+    except Exception as e:
+        log_send(f"Failed to change mode: {str(e)}")
+        raise HTTPException(500, f"Failed to arm: {str(e)}")
 
 @app.post("/command/mode", response_model=CommandResponse)
 def set_drone_mode(request: ModeRequest):
     if not vehicle_instance: raise HTTPException(503, "Drone not connected")
     try:
+        if request.drone_id == 0: Exception("Drone id 0 is none")
         vehicle_instance.set_mode(mode=request.mode.upper(), drone_id=request.drone_id)
         log_send(f"Drone {request.drone_id}: Mode changed to {request.mode.upper()}")
         return CommandResponse(status="success", message=f"Mode changed to {request.mode} for {request.drone_id} drone")

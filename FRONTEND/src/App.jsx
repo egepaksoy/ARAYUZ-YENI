@@ -127,12 +127,19 @@ export default function App() {
     const time = new Date().toLocaleTimeString([], { hour12: false });
     const targetId = drone_id || 0;
     const targetDesc = drone_id ? `Birim ${drone_id}` : "TÜM BİRİMLER";
-    setLogs(prev => [...prev, { time, msg: `${targetDesc}: ${cmd.toUpperCase()} komutu iletildi`, type: "warning" }]);
-    try {
-      const url = drone_id ? `http://localhost:8000/command/${cmd}?drone_id=${targetId}` : `http://localhost:8000/command/${cmd}`;
-      await fetch(url, { method: 'POST' });
-    } catch (err) {
-      setLogs(prev => [...prev, { time, msg: "İletişim Hatası", type: "error" }]);
+    
+    if ((targetId === null || targetId === 0) && (cmd !== "start-mission" && cmd != "failsafe-mission")) {
+      setLogs(prev => [...prev, { time, msg: "Drone bağlı değil", type: "error" }]);
+      
+    }
+    else {
+      setLogs(prev => [...prev, { time, msg: `${targetDesc}: ${cmd.toUpperCase()} komutu iletildi`, type: "warning" }]);
+      try {
+        const url = drone_id ? `http://localhost:8000/command/${cmd}?drone_id=${targetId}` : `http://localhost:8000/command/${cmd}`;
+        await fetch(url, { method: 'POST' });
+      } catch (err) {
+        setLogs(prev => [...prev, { time, msg: "İletişim Hatası", type: "error" }]);
+      }
     }
   };
 
@@ -141,28 +148,36 @@ export default function App() {
     const targetId = drone_id || 0;
     const targetDesc = drone_id !== null ? `Birim ${drone_id}` : "TÜM BİRİMLER";
 
-    setLogs(prev => [...prev, { time, msg: `${targetDesc}: Modu ${mode.toUpperCase()} yapılması istenildi`, type: "warning" }]);
+    if (targetId === null || targetId === 0) {
+      setLogs(prev => [...prev, { time, msg: "Drone bağlı değil", type: "error" }]);
+      
+    }
+    else {
+      setLogs(prev => [...prev, { time, msg: `${targetDesc}: Modu ${mode.toUpperCase()} yapılması istenildi`, type: "warning" }]);
 
-    try {
-      const url = `http://localhost:8000/command/mode`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        // Backend'deki ModeRequest modeline uygun yapı
-        body: JSON.stringify({
-          drone_id: targetId,
-          mode: mode
-        })
-      });
+      console.log(`target: ${targetId}, drone:${drone_id}`)
 
-      if (!response.ok) {
-          throw new Error("Sunucu hatası");
+      try {
+        const url = `http://localhost:8000/command/mode`;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          // Backend'deki ModeRequest modeline uygun yapı
+          body: JSON.stringify({
+            drone_id: targetId,
+            mode: mode
+          })
+        });
+
+        if (!response.ok) {
+            throw new Error("Sunucu hatası");
+        }
+
+      } catch (err) {
+        setLogs(prev => [...prev, { time, msg: "İletişim Hatası", type: "error" }]);
       }
-
-    } catch (err) {
-      setLogs(prev => [...prev, { time, msg: "İletişim Hatası", type: "error" }]);
     }
   };
 
@@ -171,7 +186,9 @@ export default function App() {
     { id: 2, alt: 0, lat: 0, lon: 0, heading: 0, battery: 100, armed: false, mode: "DISCONNECTED" }
   ];
 
-  const activeDrone = displayDrones[activeDroneIdx] || displayDrones[0];
+  drones.length < 2 ? displayDrones.push({ id: 0, alt: 0, lat: 0, lon: 0, heading: 0, battery: 100, armed: false, mode: "DISCONNECTED" }) : displayDrones
+
+  const activeDrone = displayDrones[activeDroneIdx];
 
   return (
     <div 
@@ -221,12 +238,12 @@ export default function App() {
         <div className="col-span-3 flex flex-col gap-4 overflow-hidden">
           <Card title="Uçuş Parametreleri" icon={Activity} className={themeBorderClass}>
             <div className="grid grid-cols-2 gap-y-6 gap-x-2">
-              <TelemetryItem label="İrtifa" value={activeDrone.alt.toFixed(1)} unit="m" colorClass={themeColorClass} />
+              <TelemetryItem label="İrtifa" value={activeDrone === null ? null : activeDrone.alt.toFixed(1)} unit="m" colorClass={themeColorClass} />
               <TelemetryItem label="Hız" value="0.0" unit="m/s" colorClass={themeColorClass} />
-              <TelemetryItem label="Enlem" value={activeDrone.lat.toFixed(5)} unit="°" colorClass={themeColorClass} />
-              <TelemetryItem label="Boylam" value={activeDrone.lon.toFixed(5)} unit="°" colorClass={themeColorClass} />
-              <TelemetryItem label="Açı" value={activeDrone.heading.toFixed(0)} unit="°" colorClass={themeColorClass} />
-              <TelemetryItem label="Batarya" value={activeDrone.battery} unit="%" colorClass="text-emerald-500" />
+              <TelemetryItem label="Enlem" value={activeDrone === null ? null : activeDrone.lat.toFixed(5)} unit="°" colorClass={themeColorClass} />
+              <TelemetryItem label="Boylam" value={activeDrone === null ? null : activeDrone.lon.toFixed(5)} unit="°" colorClass={themeColorClass} />
+              <TelemetryItem label="Açı" value={activeDrone === null ? null : activeDrone.heading.toFixed(0)} unit="°" colorClass={themeColorClass} />
+              <TelemetryItem label="Batarya" value={activeDrone === null ? null : activeDrone.battery} unit="%" colorClass="text-emerald-500" />
             </div>
           </Card>
 
@@ -277,12 +294,12 @@ export default function App() {
               </div>
 
               <ChangeView 
-                center={activeDrone.lat !== 0 ? [activeDrone.lat, activeDrone.lon] : userLocation} 
+                center={activeDrone === null ? userLocation : activeDrone.lat !== 0 ? [activeDrone.lat, activeDrone.lon] : userLocation} 
               />
               {displayDrones.map(d => d.lat !== 0 && (
                 <Marker key={d.id} position={[d.lat, d.lon]} icon={new L.DivIcon({
                   html: `<div style="transform: rotate(${d.heading}deg); transition: all 0.5s;">
-                          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="${d.id === 1 ? '#06b6d4' : '#ef4444'}" stroke-width="2.5" style="filter: drop-shadow(0 0 8px ${d.id === activeDrone.id ? (d.id === 1 ? '#06b6d4' : '#ef4444') : 'transparent'})">
+                          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="${d.id === 1 ? '#06b6d4' : '#ef4444'}" stroke-width="2.5" style="filter: drop-shadow(0 0 8px ${activeDrone === null ? "transparent" : d.id === activeDrone.id ? (d.id === 1 ? '#06b6d4' : '#ef4444') : 'transparent'})">
                             ${d.id === 1 
                               ? '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>' // Eye Icon
                               : '<circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/>' // Crosshair Icon
@@ -350,18 +367,17 @@ export default function App() {
         <div className="col-span-3 flex flex-col gap-4">
           <Card title="Operasyonel Güç" icon={Power} className={themeBorderClass}>
             <div className="grid gap-3">
-                {/* TODO: Burada activeDroneIdx kullanmak yerine ekrandaki dronun idsini kullan */}
-              <button onClick={() => sendCommand('arm', displayDrones[activeDroneIdx].id)} className={cn("w-full py-4 font-black rounded-xl transition-all flex items-center justify-center gap-3 text-xs tracking-widest", isAttackMode ? "bg-red-500/20 border-2 border-red-500 text-red-500 hover:bg-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.2)]" : "bg-cyan-500/20 border-2 border-cyan-500 text-cyan-500 hover:bg-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.2)]")}>
+              <button onClick={() => sendCommand('arm', activeDrone === null ? null : activeDrone.id)} className={cn("w-full py-4 font-black rounded-xl transition-all flex items-center justify-center gap-3 text-xs tracking-widest", isAttackMode ? "bg-red-500/20 border-2 border-red-500 text-red-500 hover:bg-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.2)]" : "bg-cyan-500/20 border-2 border-cyan-500 text-cyan-500 hover:bg-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.2)]")}>
                 <ShieldAlert className="w-5 h-5" /> SİSTEMİ ARM ET
               </button>
-              <button onClick={() => sendCommand('disarm', displayDrones[activeDroneIdx].id)} className="w-full py-3 bg-zinc-900 border border-white/5 text-gray-500 font-bold rounded-xl hover:bg-zinc-800 transition-all text-[9px] tracking-[0.2em]">GÜVENLİ DISARM</button>
+              <button onClick={() => sendCommand('disarm', activeDrone === null ? null : activeDrone.id)} className="w-full py-3 bg-zinc-900 border border-white/5 text-gray-500 font-bold rounded-xl hover:bg-zinc-800 transition-all text-[9px] tracking-[0.2em]">GÜVENLİ DISARM</button>
             </div>
           </Card>
 
           <Card title="Uçuş Modu Seçimi" icon={Activity} className={themeBorderClass}>
             <div className="grid grid-cols-2 gap-2">
               {['GUIDED', 'AUTO', 'RTL', 'LAND'].map(mode => (
-                <button key={mode} onClick={() => changeMode(mode, displayDrones[activeDroneIdx].id)} className={cn("py-3 text-[10px] font-black rounded-lg border transition-all tracking-widest", activeDrone.mode === mode ? (isAttackMode ? "bg-red-500 border-red-400 text-black shadow-[0_0_25px_rgba(239,68,68,0.6)] scale-[1.02] brightness-125" : "bg-cyan-500 border-cyan-400 text-black shadow-[0_0_25px_rgba(6,182,212,0.6)] scale-[1.02] brightness-125") : "bg-white/5 border-white/5 text-white/40 hover:bg-white/10")}>{mode}</button>
+                <button key={mode} onClick={() => changeMode(mode, activeDrone === null ? null : activeDrone.id)} className={cn("py-3 text-[10px] font-black rounded-lg border transition-all tracking-widest", activeDrone.mode === mode ? (isAttackMode ? "bg-red-500 border-red-400 text-black shadow-[0_0_25px_rgba(239,68,68,0.6)] scale-[1.02] brightness-125" : "bg-cyan-500 border-cyan-400 text-black shadow-[0_0_25px_rgba(6,182,212,0.6)] scale-[1.02] brightness-125") : "bg-white/5 border-white/5 text-white/40 hover:bg-white/10")}>{mode}</button>
               ))}
             </div>
           </Card>

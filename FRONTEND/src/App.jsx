@@ -294,7 +294,7 @@ export default function App() {
               </div>
 
               <ChangeView 
-                center={activeDrone === null ? userLocation : activeDrone.lat !== 0 ? [activeDrone.lat, activeDrone.lon] : userLocation} 
+                center={activeDrone === null ? displayDrones[0].lat !== 0 ? [displayDrones[0].lat, displayDrones[0].lon] : userLocation : activeDrone.lat !== 0 ? [activeDrone.lat, activeDrone.lon] : displayDrones[0].lat !== 0 ? [displayDrones[0].lat, displayDrones[0].lon] : userLocation} 
               />
               {displayDrones.map(d => d.lat !== 0 && (
                 <Marker key={d.id} position={[d.lat, d.lon]} icon={new L.DivIcon({
@@ -397,10 +397,9 @@ export default function App() {
         <div className="col-span-3 flex flex-col gap-4">
           <Card title="Operasyonel Güç" icon={Power} className={themeBorderClass}>
             <div className="grid gap-3">
-              <button onClick={() => sendCommand('arm', activeDrone === null ? null : activeDrone.id)} className={cn("w-full py-4 font-black rounded-xl transition-all flex items-center justify-center gap-3 text-xs tracking-widest", isAttackMode ? "bg-red-500/20 border-2 border-red-500 text-red-500 hover:bg-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.2)]" : "bg-cyan-500/20 border-2 border-cyan-500 text-cyan-500 hover:bg-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.2)]")}>
-                <ShieldAlert className="w-5 h-5" /> SİSTEMİ ARM ET
+              <button onClick={() => sendCommand(activeDrone.armed ? 'disarm' : 'arm', activeDrone === null ? null : activeDrone.id)} className={cn("w-full py-4 font-black rounded-xl transition-all flex items-center justify-center gap-3 text-xs tracking-widest", activeDrone.armed ? "bg-red-500/20 border-2 border-red-500 text-red-500 hover:bg-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.2)]" : "bg-cyan-500/20 border-2 border-cyan-500 text-cyan-500 hover:bg-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.2)]")}>
+                <ShieldAlert className="w-5 h-5" /> {activeDrone.armed ? "SİSTEMİ DISARM ET" : "SİSTEMİ ARM ET"}
               </button>
-              <button onClick={() => sendCommand('disarm', activeDrone === null ? null : activeDrone.id)} className="w-full py-3 bg-zinc-900 border border-white/5 text-gray-500 font-bold rounded-xl hover:bg-zinc-800 transition-all text-[9px] tracking-[0.2em]">GÜVENLİ DISARM</button>
             </div>
           </Card>
 

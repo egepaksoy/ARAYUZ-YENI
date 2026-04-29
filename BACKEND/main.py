@@ -2,14 +2,16 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks, WebSocket, WebSocke
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
-import sys
-import os
-import json
-import time
-import threading
+import sys, os, json, time, threading
 import asyncio
 import signal
 
+# Goruntu aktarımı icin
+from fastapi.responses import StreamingResponse
+from libs.image_proccesser import Handler
+
+
+# TODO: ctrl+c'de kamera kapanmadıgı icin kod cikmiyor
 # --- WebSocket Connection Manager ---
 class ConnectionManager:
     def __init__(self):
@@ -74,6 +76,9 @@ with open(CONFIG_FILE, "r") as f:
 conn_port = conf["CONN-PORT"]
 ALT = conf["DRONE"]["alt"]
 LOC = conf["DRONE"]["loc"]
+                
+image_handler_0 = Handler(stop_event=stop_event, window_name="Gozlemci goruntu")
+image_handler_1 = Handler(stop_event=stop_event, window_name="Saldırı goruntu")
 
 is_running = threading.Event()
 
@@ -184,7 +189,25 @@ async def startup_event():
             except Exception as e:
                 print(f"[Error] Vehicle connection failed: {e}")
 
+        # Goruntu aktarma threadi
+        def start_camera():
+            print("[Sistem] Kamera ve Görüntü İşleme başlatılıyor...")
+            # image_handler.start_proccessing("yolov8n.pt", conf=0.5)
+            
+            image_handler_0.showing_image = False
+            image_handler_1.showing_image = False
+
+            t0 = threading.Thread(target=image_handler_0.local_camera, args=(0, ), daemon=True)
+            t1 = threading.Thread(target=image_handler_1.local_camera, args=(1, ), daemon=True)
+            
+            t0.start()
+            t1.start()
+
+            print("[System] İki kamera da başlatıldı.")
+
+        threading.Thread(target=start_camera, daemon=True).start() # KAMERAYI BAŞLAT
         threading.Thread(target=init_vehicle, daemon=True).start()
+
     except Exception as e:
         print(f"[Error] Initialization failed: {e}")
 
@@ -206,8 +229,16 @@ def handle_exit(sig, frame):
     print(f"\n[System] Signal {sig} received, forcing exit...")
     system_running.set()
     stop_event.set()
-    # Give it a moment to cleanup then force exit
-    os._exit(0)
+    
+    if vehicle_instance:
+        try:
+            vehicle_instance.close()
+        except:
+            pass
+            
+    # Kısa bir bekleme thredlerin finally bloklarını çalıştırmasına izin verir
+    time.sleep(1) 
+    sys.exit(0)
 
 signal.signal(signal.SIGINT, handle_exit)
 signal.signal(signal.SIGTERM, handle_exit)
@@ -250,6 +281,38 @@ def get_telemetry():
             "drones": drones_list,
             "logs": current_logs
         }
+
+# Video akışı için jeneratör fonksiyon
+def video_generator(handler: Handler):
+    while not stop_event.is_set():
+        if handler.output_frame is not None:
+            with handler.output_lock:
+                frame_data = handler.output_frame
+            
+            # MJPEG formatında frame'i yield et
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
+        else:
+            time.sleep(0.05) # Görüntü yoksa CPU'yu yormamak için bekle
+
+# Video yayinlari
+@app.get("/video-feed/0")
+def get_video_feed():
+    """Görüntü işleme çıktısını canlı olarak yayınlar."""
+    print("feed0")
+    if image_handler_0.video_started:
+        return StreamingResponse(video_generator(image_handler_0), media_type="multipart/x-mixed-replace; boundary=frame")
+    else:
+        return StreamingResponse(None)
+
+@app.get("/video-feed/1")
+def get_video_feed():
+    """Görüntü işleme çıktısını canlı olarak yayınlar."""
+    print("feed1")
+    if image_handler_1.video_started:
+        return StreamingResponse(video_generator(image_handler_1), media_type="multipart/x-mixed-replace; boundary=frame")
+    else:
+        return StreamingResponse(None)
 
 @app.post("/command/arm", response_model=CommandResponse)
 def arm_drone(drone_id: Optional[int] = None):

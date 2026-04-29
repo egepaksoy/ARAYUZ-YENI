@@ -37,6 +37,9 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+#! KAMERA AC
+with_camera = False
+
 # --- Configuration & Paths ---
 PYMAVLINK_PATH = "./pymavlink_custom"
 CONFIG_FILE = "./config.json"
@@ -205,7 +208,8 @@ async def startup_event():
 
             print("[System] İki kamera da başlatıldı.")
 
-        threading.Thread(target=start_camera, daemon=True).start() # KAMERAYI BAŞLAT
+        if with_camera:
+            threading.Thread(target=start_camera, daemon=True).start() # KAMERAYI BAŞLAT
         threading.Thread(target=init_vehicle, daemon=True).start()
 
     except Exception as e:
@@ -236,8 +240,6 @@ def handle_exit(sig, frame):
         except:
             pass
             
-    # Kısa bir bekleme thredlerin finally bloklarını çalıştırmasına izin verir
-    time.sleep(1) 
     sys.exit(0)
 
 signal.signal(signal.SIGINT, handle_exit)

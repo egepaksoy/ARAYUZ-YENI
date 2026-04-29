@@ -116,7 +116,7 @@ export default function App() {
         setIsConnected(false);
         setDrones([]); // Bağlantı koptuğunda drone verilerini temizle (değerler 0'a döner)
         globalWs = null;
-        reconnectTimeout = setTimeout(connect, 3000);
+        reconnectTimeout = setTimeout(connect, 1000);
       };
     };
     connect();
@@ -125,7 +125,7 @@ export default function App() {
 
   const sendCommand = async (cmd, drone_id = null) => {
     const time = new Date().toLocaleTimeString([], { hour12: false });
-    const targetId = drone_id || (activeDroneIdx + 1);
+    const targetId = drone_id || 0;
     const targetDesc = drone_id ? `Birim ${drone_id}` : "TÜM BİRİMLER";
     setLogs(prev => [...prev, { time, msg: `${targetDesc}: ${cmd.toUpperCase()} komutu iletildi`, type: "warning" }]);
     try {
@@ -138,12 +138,29 @@ export default function App() {
 
   const changeMode = async (mode, drone_id = null) => {
     const time = new Date().toLocaleTimeString([], { hour12: false });
-    const targetId = drone_id || (activeDroneIdx + 1);
-    const targetDesc = drone_id ? `Birim ${drone_id}` : "TÜM BİRİMLER";
+    const targetId = drone_id || 0;
+    const targetDesc = drone_id !== null ? `Birim ${drone_id}` : "TÜM BİRİMLER";
+
     setLogs(prev => [...prev, { time, msg: `${targetDesc}: Modu ${mode.toUpperCase()} yapılması istenildi`, type: "warning" }]);
+
     try {
-      const url = `http://localhost:8000/command/mode?drone_id=${targetId}?mode=${mode}`;
-      await fetch(url, { method: 'POST' });
+      const url = `http://localhost:8000/command/mode`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        // Backend'deki ModeRequest modeline uygun yapı
+        body: JSON.stringify({
+          drone_id: targetId,
+          mode: mode
+        })
+      });
+
+      if (!response.ok) {
+          throw new Error("Sunucu hatası");
+      }
+
     } catch (err) {
       setLogs(prev => [...prev, { time, msg: "İletişim Hatası", type: "error" }]);
     }
@@ -334,17 +351,17 @@ export default function App() {
           <Card title="Operasyonel Güç" icon={Power} className={themeBorderClass}>
             <div className="grid gap-3">
                 {/* TODO: Burada activeDroneIdx kullanmak yerine ekrandaki dronun idsini kullan */}
-              <button onClick={() => sendCommand('arm', activeDroneIdx + 1)} className={cn("w-full py-4 font-black rounded-xl transition-all flex items-center justify-center gap-3 text-xs tracking-widest", isAttackMode ? "bg-red-500/20 border-2 border-red-500 text-red-500 hover:bg-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.2)]" : "bg-cyan-500/20 border-2 border-cyan-500 text-cyan-500 hover:bg-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.2)]")}>
+              <button onClick={() => sendCommand('arm', displayDrones[activeDroneIdx].id)} className={cn("w-full py-4 font-black rounded-xl transition-all flex items-center justify-center gap-3 text-xs tracking-widest", isAttackMode ? "bg-red-500/20 border-2 border-red-500 text-red-500 hover:bg-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.2)]" : "bg-cyan-500/20 border-2 border-cyan-500 text-cyan-500 hover:bg-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.2)]")}>
                 <ShieldAlert className="w-5 h-5" /> SİSTEMİ ARM ET
               </button>
-              <button onClick={() => sendCommand('disarm', activeDroneIdx + 1)} className="w-full py-3 bg-zinc-900 border border-white/5 text-gray-500 font-bold rounded-xl hover:bg-zinc-800 transition-all text-[9px] tracking-[0.2em]">GÜVENLİ DISARM</button>
+              <button onClick={() => sendCommand('disarm', displayDrones[activeDroneIdx].id)} className="w-full py-3 bg-zinc-900 border border-white/5 text-gray-500 font-bold rounded-xl hover:bg-zinc-800 transition-all text-[9px] tracking-[0.2em]">GÜVENLİ DISARM</button>
             </div>
           </Card>
 
           <Card title="Uçuş Modu Seçimi" icon={Activity} className={themeBorderClass}>
             <div className="grid grid-cols-2 gap-2">
               {['GUIDED', 'AUTO', 'RTL', 'LAND'].map(mode => (
-                <button key={mode} onClick={() => changeMode(mode, activeDroneIdx + 1)} className={cn("py-3 text-[10px] font-black rounded-lg border transition-all tracking-widest", activeDrone.mode === mode ? (isAttackMode ? "bg-red-500 border-red-400 text-black shadow-[0_0_25px_rgba(239,68,68,0.6)] scale-[1.02] brightness-125" : "bg-cyan-500 border-cyan-400 text-black shadow-[0_0_25px_rgba(6,182,212,0.6)] scale-[1.02] brightness-125") : "bg-white/5 border-white/5 text-white/40 hover:bg-white/10")}>{mode}</button>
+                <button key={mode} onClick={() => changeMode(mode, displayDrones[activeDroneIdx].id)} className={cn("py-3 text-[10px] font-black rounded-lg border transition-all tracking-widest", activeDrone.mode === mode ? (isAttackMode ? "bg-red-500 border-red-400 text-black shadow-[0_0_25px_rgba(239,68,68,0.6)] scale-[1.02] brightness-125" : "bg-cyan-500 border-cyan-400 text-black shadow-[0_0_25px_rgba(6,182,212,0.6)] scale-[1.02] brightness-125") : "bg-white/5 border-white/5 text-white/40 hover:bg-white/10")}>{mode}</button>
               ))}
             </div>
           </Card>

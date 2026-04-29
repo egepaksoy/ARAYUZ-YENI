@@ -136,6 +136,19 @@ export default function App() {
     }
   };
 
+  const changeMode = async (mode, drone_id = null) => {
+    const time = new Date().toLocaleTimeString([], { hour12: false });
+    const targetId = drone_id || (activeDroneIdx + 1);
+    const targetDesc = drone_id ? `Birim ${drone_id}` : "TÜM BİRİMLER";
+    setLogs(prev => [...prev, { time, msg: `${targetDesc}: Modu ${mode.toUpperCase()} yapılması istenildi`, type: "warning" }]);
+    try {
+      const url = `http://localhost:8000/command/mode?drone_id=${targetId}?mode=${mode}`;
+      await fetch(url, { method: 'POST' });
+    } catch (err) {
+      setLogs(prev => [...prev, { time, msg: "İletişim Hatası", type: "error" }]);
+    }
+  };
+
   const displayDrones = drones.length > 0 ? drones : [
     { id: 1, alt: 0, lat: 0, lon: 0, heading: 0, battery: 100, armed: false, mode: "DISCONNECTED" },
     { id: 2, alt: 0, lat: 0, lon: 0, heading: 0, battery: 100, armed: false, mode: "DISCONNECTED" }
@@ -248,7 +261,6 @@ export default function App() {
 
               <ChangeView 
                 center={activeDrone.lat !== 0 ? [activeDrone.lat, activeDrone.lon] : userLocation} 
-                zoom={16}
               />
               {displayDrones.map(d => d.lat !== 0 && (
                 <Marker key={d.id} position={[d.lat, d.lon]} icon={new L.DivIcon({
@@ -289,20 +301,7 @@ export default function App() {
             
             <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.02),rgba(0,255,0,0.01),rgba(0,0,255,0.02))] z-10 bg-[length:100%_4px,4px_100%]" />
             <div className="absolute inset-0 flex items-center justify-center bg-[#080a0c]">
-              <img 
-                src="http://localhost:8000/video_feed" 
-                alt="Video Stream" 
-                className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-500"
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                  e.target.nextSibling.style.display = 'flex';
-                }}
-                onLoad={(e) => {
-                  e.target.style.display = 'block';
-                  if (e.target.nextSibling) e.target.nextSibling.style.display = 'none';
-                }}
-              />
-              <div className="hidden text-center flex flex-col items-center">
+              <div className="text-center flex flex-col items-center">
                 <img src={logo} alt="Aerokou" className="w-64 h-auto opacity-10 mb-6" />
                 <div className="opacity-20 flex flex-col items-center">
                   <Video className={cn("w-12 h-12 mb-4 animate-pulse", isAttackMode ? "text-red-500" : "text-cyan-500")} />
@@ -334,6 +333,7 @@ export default function App() {
         <div className="col-span-3 flex flex-col gap-4">
           <Card title="Operasyonel Güç" icon={Power} className={themeBorderClass}>
             <div className="grid gap-3">
+                {/* TODO: Burada activeDroneIdx kullanmak yerine ekrandaki dronun idsini kullan */}
               <button onClick={() => sendCommand('arm', activeDroneIdx + 1)} className={cn("w-full py-4 font-black rounded-xl transition-all flex items-center justify-center gap-3 text-xs tracking-widest", isAttackMode ? "bg-red-500/20 border-2 border-red-500 text-red-500 hover:bg-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.2)]" : "bg-cyan-500/20 border-2 border-cyan-500 text-cyan-500 hover:bg-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.2)]")}>
                 <ShieldAlert className="w-5 h-5" /> SİSTEMİ ARM ET
               </button>
@@ -344,7 +344,7 @@ export default function App() {
           <Card title="Uçuş Modu Seçimi" icon={Activity} className={themeBorderClass}>
             <div className="grid grid-cols-2 gap-2">
               {['GUIDED', 'AUTO', 'RTL', 'LAND'].map(mode => (
-                <button key={mode} onClick={() => sendCommand('mode', activeDroneIdx + 1)} className={cn("py-3 text-[10px] font-black rounded-lg border transition-all tracking-widest", activeDrone.mode === mode ? (isAttackMode ? "bg-red-500 border-red-400 text-black shadow-[0_0_25px_rgba(239,68,68,0.6)] scale-[1.02] brightness-125" : "bg-cyan-500 border-cyan-400 text-black shadow-[0_0_25px_rgba(6,182,212,0.6)] scale-[1.02] brightness-125") : "bg-white/5 border-white/5 text-white/40 hover:bg-white/10")}>{mode}</button>
+                <button key={mode} onClick={() => changeMode(mode, activeDroneIdx + 1)} className={cn("py-3 text-[10px] font-black rounded-lg border transition-all tracking-widest", activeDrone.mode === mode ? (isAttackMode ? "bg-red-500 border-red-400 text-black shadow-[0_0_25px_rgba(239,68,68,0.6)] scale-[1.02] brightness-125" : "bg-cyan-500 border-cyan-400 text-black shadow-[0_0_25px_rgba(6,182,212,0.6)] scale-[1.02] brightness-125") : "bg-white/5 border-white/5 text-white/40 hover:bg-white/10")}>{mode}</button>
               ))}
             </div>
           </Card>

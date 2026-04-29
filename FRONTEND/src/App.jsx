@@ -334,6 +334,35 @@ export default function App() {
             )}
             
             <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.02),rgba(0,255,0,0.01),rgba(0,0,255,0.02))] z-10 bg-[length:100%_4px,4px_100%]" />
+            <div className="absolute inset-0 flex items-center justify-center bg-[#080a0c] z-10 overflow-hidden">
+              {/* Canlı Video Akışı */}
+              <img 
+                src={`http://localhost:8000/video-feed/${activeDroneIdx}`} 
+                alt={`Drone ${activeDroneIdx} Yayını`}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  // Bağlantı koparsa veya kamera yoksa placeholder'ı göster
+                  e.target.style.display = 'none';
+                  document.getElementById('video-placeholder').style.display = 'flex';
+                }}
+                onLoad={(e) => {
+                  // Görüntü gelirse placeholder'ı gizle
+                  e.target.style.display = 'block';
+                  document.getElementById('video-placeholder').style.display = 'none';
+                }}
+              />
+              
+              {/* Video Yoksa Gösterilecek Placeholder */}
+              <div id="video-placeholder" className="text-center flex flex-col items-center absolute">
+                <img src={logo} alt="Aerokou" className="w-64 h-auto opacity-10 mb-6" />
+                <div className="opacity-20 flex flex-col items-center">
+                  <Video className={cn("w-12 h-12 mb-4 animate-pulse", isAttackMode ? "text-red-500" : "text-cyan-500")} />
+                  <p className="font-mono text-[10px] tracking-[0.5em] uppercase font-black">Video Akışı Bekleniyor</p>
+                </div>
+              </div>
+            </div>
+            
+            {/*
             <div className="absolute inset-0 flex items-center justify-center bg-[#080a0c]">
               <div className="text-center flex flex-col items-center">
                 <img src={logo} alt="Aerokou" className="w-64 h-auto opacity-10 mb-6" />
@@ -343,6 +372,7 @@ export default function App() {
                 </div>
               </div>
             </div>
+            */}
           </div>
 
           <Card title="Sistem Kayıtları" icon={LogIcon} className={cn("flex-grow", themeBorderClass)}>

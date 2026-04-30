@@ -10,5 +10,7 @@
         "distance-meter": 1,
         "geri-don": true,
         "acil-mode": "LAND"
-    }
+    },
+    "CAM0": "192.168.31.108 9999",
+    "CAM1": "192.168.31.80 9999"
 }

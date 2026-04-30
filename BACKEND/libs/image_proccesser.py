@@ -257,9 +257,7 @@ class Handler:
                 self.video_started = True
 
                 # Çıkış için 'q' tuşuna basılması beklenir
-                if cv2.waitKey(10) & 0xFF == ord('q'):
-                    self.stop_event.set()
-                    break
+                cv2.waitKey(1)
 
         except Exception as e:
             print(f"Hata: {e}")

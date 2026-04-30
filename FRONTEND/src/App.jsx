@@ -24,6 +24,7 @@ import logo from './assets/logo_new.png';
 import feniks_blue from './assets/feniks_blue.png';
 import feniks_red from './assets/feniks_red.png';
 
+// TODO: loglara pencere kaydırma ekle
 // Fix for default marker icons in Leaflet
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
@@ -397,9 +398,15 @@ export default function App() {
         <div className="col-span-3 flex flex-col gap-4">
           <Card title="Operasyonel Güç" icon={Power} className={themeBorderClass}>
             <div className="grid gap-3">
-              <button onClick={() => sendCommand(activeDrone.armed ? 'disarm' : 'arm', activeDrone === null ? null : activeDrone.id)} className={cn("w-full py-4 font-black rounded-xl transition-all flex items-center justify-center gap-3 text-xs tracking-widest", activeDrone.armed ? "bg-red-500/20 border-2 border-red-500 text-red-500 hover:bg-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.2)]" : "bg-cyan-500/20 border-2 border-cyan-500 text-cyan-500 hover:bg-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.2)]")}>
-                <ShieldAlert className="w-5 h-5" /> {activeDrone.armed ? "SİSTEMİ DISARM ET" : "SİSTEMİ ARM ET"}
-              </button>
+              <button 
+                onClick={() => sendCommand(activeDrone.armed ? 'disarm' : 'arm', activeDrone === null ? null : activeDrone.id)} 
+                className={cn(
+                  "w-full py-4 font-black rounded-xl transition-all flex items-center justify-center gap-3 text-xs tracking-widest", 
+                  (activeDroneIdx === 0 && activeDrone.armed) || (activeDroneIdx === 1 && !activeDrone.armed)
+                    ? "bg-red-500/20 border-2 border-red-500 text-red-500 hover:bg-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.2)]" 
+                    : "bg-cyan-500/20 border-2 border-cyan-500 text-cyan-500 hover:bg-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.2)]"
+                )}
+              ><ShieldAlert className="w-5 h-5" /> {activeDrone.armed ? "SİSTEMİ DISARM ET" : "SİSTEMİ ARM ET"}</button>
             </div>
           </Card>
 

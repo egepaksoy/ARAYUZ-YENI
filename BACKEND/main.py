@@ -38,7 +38,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 #! KAMERA AC
-with_camera = False
+with_camera = True
 
 # --- Configuration & Paths ---
 PYMAVLINK_PATH = "./pymavlink_custom"
@@ -79,6 +79,9 @@ with open(CONFIG_FILE, "r") as f:
 conn_port = conf["CONN-PORT"]
 ALT = conf["DRONE"]["alt"]
 LOC = conf["DRONE"]["loc"]
+
+cam0 = conf["CAM0"]
+cam1 = conf["CAM1"]
                 
 image_handler_0 = Handler(stop_event=stop_event, window_name="Gozlemci goruntu")
 image_handler_1 = Handler(stop_event=stop_event, window_name="Saldırı goruntu")
@@ -196,12 +199,22 @@ async def startup_event():
         def start_camera():
             print("[Sistem] Kamera ve Görüntü İşleme başlatılıyor...")
             # image_handler.start_proccessing("yolov8n.pt", conf=0.5)
-            
+
             image_handler_0.showing_image = False
             image_handler_1.showing_image = False
 
-            t0 = threading.Thread(target=image_handler_0.local_camera, args=(0, ), daemon=True)
-            t1 = threading.Thread(target=image_handler_1.local_camera, args=(1, ), daemon=True)
+            if len(cam0.split()) > 1:
+                print("CAM0 Kablosuz")
+                t0 = threading.Thread(target=image_handler_0.udp_camera, args=(cam0.split()[0], int(cam0.split()[1])), daemon=True)
+            else:
+                t0 = threading.Thread(target=image_handler_0.local_camera, args=(cam0, ), daemon=True)
+
+            if len(cam1.split()) > 1:
+                print("CAM1 Kablosuz")
+                t1 = threading.Thread(target=image_handler_1.udp_camera, args=(cam1.split()[0], int(cam1.split()[1])), daemon=True)
+            else:
+                t1 = threading.Thread(target=image_handler_1.local_camera, args=(cam1, ), daemon=True)
+
             
             t0.start()
             t1.start()
